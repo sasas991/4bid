@@ -1,12 +1,20 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from .api import auth, auctions
-from .db.session import engine, Base
+from .core.config import settings
 
-# Create tables if they don't exist (Simple way for dev, use Alembic for real)
-Base.metadata.create_all(bind=engine)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic: database connections, etc.
+    # We use Alembic for migrations, so no create_all here
+    yield
+    # Shutdown logic: close connections, etc.
 
-app = FastAPI(title="SolAuction API")
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    lifespan=lifespan
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,4 +29,4 @@ app.include_router(auctions.router, prefix="/api")
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to SolAuction API"}
+    return {"message": f"Welcome to {settings.PROJECT_NAME} API"}

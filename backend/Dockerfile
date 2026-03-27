@@ -1,18 +1,23 @@
 FROM python:3.11-slim
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /app
 
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+# Enable bytecode compilation
+ENV UV_COMPILE_BYTECODE=1
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
+# Copy requirements
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
+# Install dependencies using uv
+RUN uv pip install --no-cache-dir --system -r requirements.txt
+
+# Copy project files
 COPY . .
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Ensure start.sh is executable
+RUN chmod +x start.sh
+
+CMD ["./start.sh"]

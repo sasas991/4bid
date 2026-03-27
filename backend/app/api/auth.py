@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from ..db.session import get_db
+from ..core.database import get_db
+from ..core import security
 from ..models.models import User
 from ..schemas import schemas
 from ..services import auth
@@ -33,12 +34,12 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     if not is_valid and request.signature != "test-sig":
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    access_token = auth.create_access_token(data={"sub": user.wallet_address})
+    access_token = security.create_access_token(data={"sub": user.wallet_address})
     user.nonce = None # Invalidate nonce after use
     db.commit()
     
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=schemas.User)
-def read_users_me(current_user: User = Depends(auth.get_current_user)):
+def read_users_me(current_user: User = Depends(security.get_current_user)):
     return current_user
