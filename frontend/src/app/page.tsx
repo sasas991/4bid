@@ -66,7 +66,7 @@ export default function HomePage() {
               </Button>
             </Link>
             <Link href="/create">
-              <Button size="lg" variant="outline" className="h-12 border-white/40 px-8 text-white hover:bg-white/10">
+              <Button size="lg" className="h-12 bg-white px-8 text-[#3665F3] font-semibold hover:bg-blue-50">
                 List Your Item
               </Button>
             </Link>
