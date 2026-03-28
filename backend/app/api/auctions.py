@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from ..core.database import get_db
@@ -6,7 +6,6 @@ from ..core import security
 from ..models.models import Auction, User, Bid, AuctionStatus
 from ..schemas import schemas
 from ..services import auctions as auction_service
-from datetime import datetime
 
 router = APIRouter(prefix="/auctions", tags=["auctions"])
 
@@ -36,17 +35,28 @@ def get_my_bids(
 ):
     return db.query(Bid).filter(Bid.user_id == current_user.id).all()
 
-@router.get("/{auction_id}", response_model=schemas.Auction)
-def get_auction(auction_id: int, db: Session = Depends(get_db)):
-    auction = db.query(Auction).filter(Auction.id == auction_id).first()
-    if not auction:
-        raise HTTPException(status_code=404, detail="Auction not found")
-    
-    # Check if expired and finalize if needed
-    if auction.status == AuctionStatus.ACTIVE and auction.deadline < datetime.utcnow():
-        auction = auction_service.finalize_auction(db, auction)
-        
-    return auction
+@router.get("/{auction_id}", response_model=schemas.AuctionDetail)
+def get_auction(
+    auction_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(security.get_optional_current_user),
+):
+    user_id = current_user.id if current_user else 0
+    auction = auction_service.get_auction_detail(db, auction_id, user_id)
+
+    visible_hidden: Optional[str] = auction.hidden_content
+    if auction.winner_id != user_id and auction.owner_id != user_id:
+        visible_hidden = None
+    elif auction.status not in [
+        AuctionStatus.PAID,
+        AuctionStatus.SHIPPED,
+        AuctionStatus.COMPLETED,
+    ]:
+        if auction.owner_id != user_id:
+            visible_hidden = None
+
+    detail = schemas.AuctionDetail.model_validate(auction, from_attributes=True)
+    return detail.model_copy(update={"hidden_content": visible_hidden})
 
 @router.post("/{auction_id}/bids", response_model=schemas.Bid)
 def create_bid(

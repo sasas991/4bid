@@ -4,29 +4,37 @@ from datetime import datetime
 import enum
 from ..core.database import Base
 
+class LotType(str, enum.Enum):
+    PHYSICAL_ITEM = "physical_item"
+    INFORMATION = "information"
+    PHYSICAL_SERVICE = "physical_service"
+    DIGITAL_SERVICE = "digital_service"
+
+class AuctionStatus(str, enum.Enum):
+    ACTIVE = "active"
+    FINISHED = "finished"  # Ended, waiting for payment
+    PAID = "paid"          # Money in Escrow
+    SHIPPED = "shipped"    # Item/Service sent
+    COMPLETED = "completed" # Released from Escrow to Seller
+    CANCELLED = "cancelled"
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     wallet_address = Column(String, unique=True, index=True, nullable=False)
-    nonce = Column(String, nullable=True) # Used for wallet login
+    username = Column(String, nullable=True)
+    bio = Column(Text, nullable=True)
+    avatar_url = Column(String, nullable=True)
+    nonce = Column(String, nullable=True)
+    
+    # Internal balance for withdrawals (earnings from auctions)
+    balance = Column(Float, default=0.0)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
 
     auctions = relationship("Auction", back_populates="owner", foreign_keys="[Auction.owner_id]")
     bids = relationship("Bid", back_populates="user")
-
-class LotType(str, enum.Enum):
-    PRODUCT = "product"
-    SERVICE = "service"
-    KNOWLEDGE = "knowledge"
-
-class AuctionStatus(str, enum.Enum):
-    ACTIVE = "active"
-    FINISHED = "finished"
-    PAID = "paid"
-    SHIPPED = "shipped"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
 
 class Auction(Base):
     __tablename__ = "auctions"
@@ -34,11 +42,16 @@ class Auction(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)
     description = Column(Text, nullable=True)
-    lot_type = Column(Enum(LotType), default=LotType.PRODUCT)
+    lot_type = Column(Enum(LotType), default=LotType.PHYSICAL_ITEM)
+    
+    # For 'information' type: content only visible to winner after payment
+    hidden_content = Column(Text, nullable=True) 
+    
     starting_price = Column(Float, nullable=False)
     current_price = Column(Float, nullable=False)
     deadline = Column(DateTime, nullable=False)
     status = Column(Enum(AuctionStatus), default=AuctionStatus.ACTIVE)
+    
     owner_id = Column(Integer, ForeignKey("users.id"))
     winner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -46,6 +59,7 @@ class Auction(Base):
     owner = relationship("User", foreign_keys=[owner_id], back_populates="auctions")
     winner = relationship("User", foreign_keys=[winner_id])
     bids = relationship("Bid", back_populates="auction")
+    escrow = relationship("Escrow", back_populates="auction", uselist=False)
 
 class Bid(Base):
     __tablename__ = "bids"
@@ -53,9 +67,29 @@ class Bid(Base):
     id = Column(Integer, primary_key=True, index=True)
     amount = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
-    signature = Column(String, nullable=False) # Solana signature for the bid
+    signature = Column(String, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"))
     auction_id = Column(Integer, ForeignKey("auctions.id"))
 
     user = relationship("User", back_populates="bids")
     auction = relationship("Auction", back_populates="bids")
+
+class EscrowStatus(str, enum.Enum):
+    HELD = "held"           # Funds received from buyer
+    RELEASED = "released"   # Funds sent to seller balance
+    REFUNDED = "refunded"   # Funds returned to buyer
+
+class Escrow(Base):
+    __tablename__ = "escrows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    auction_id = Column(Integer, ForeignKey("auctions.id"), unique=True)
+    amount = Column(Float, nullable=False)
+    status = Column(Enum(EscrowStatus), default=EscrowStatus.HELD)
+    
+    tx_signature = Column(String, nullable=False) # The payment TX from buyer
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    auction = relationship("Auction", back_populates="escrow")
