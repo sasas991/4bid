@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Tex
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
-from ..db.session import Base
+from ..core.database import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -12,7 +12,7 @@ class User(Base):
     nonce = Column(String, nullable=True) # Used for wallet login
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    auctions = relationship("Auction", back_populates="owner")
+    auctions = relationship("Auction", back_populates="owner", foreign_keys="[Auction.owner_id]")
     bids = relationship("Bid", back_populates="user")
 
 class LotType(str, enum.Enum):

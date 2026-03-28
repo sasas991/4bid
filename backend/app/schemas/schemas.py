@@ -44,6 +44,7 @@ class AuctionCreate(AuctionBase):
 class AuctionUpdate(BaseModel):
     status: Optional[AuctionStatus] = None
     winner_id: Optional[int] = None
+    tx_signature: Optional[str] = None
 
 class Auction(AuctionBase):
     model_config = ConfigDict(from_attributes=True)
