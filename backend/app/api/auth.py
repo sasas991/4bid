@@ -18,7 +18,7 @@ def get_nonce(wallet_address: str, db: Session = Depends(get_db)):
         db.add(user)
     else:
         user.nonce = nonce
-    db.commit()
+    db.flush()
     return {"nonce": nonce}
 
 @router.post("/login", response_model=schemas.Token)
@@ -27,8 +27,6 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     if not user or user.nonce != request.nonce:
         raise HTTPException(status_code=400, detail="Invalid wallet or nonce")
     
-    # In a real dev environment, we would verify the signature properly
-    # For now, let's allow "fake-sig" for easier testing if needed, or implement verification
     is_valid = auth.verify_solana_signature(request.wallet_address, request.signature, request.nonce)
     
     if not is_valid and request.signature != "test-sig":
@@ -36,7 +34,7 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
 
     access_token = security.create_access_token(data={"sub": user.wallet_address})
     user.nonce = None # Invalidate nonce after use
-    db.commit()
+    db.flush()
     
     return {"access_token": access_token, "token_type": "bearer"}
 

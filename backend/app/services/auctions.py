@@ -28,12 +28,13 @@ def create_auction(db: Session, auction: schemas.AuctionCreate, owner_id: int):
         status=AuctionStatus.ACTIVE
     )
     db.add(db_auction)
-    db.commit()
+    db.flush()
     db.refresh(db_auction)
     return db_auction
 
 def place_bid(db: Session, auction_id: int, bid_data: schemas.BidCreate, user: User):
-    auction = db.query(Auction).filter(Auction.id == auction_id).first()
+    # Lock the auction row for update to handle concurrent bids
+    auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
     if not auction:
         raise HTTPException(status_code=404, detail="Auction not found")
     
@@ -48,7 +49,6 @@ def place_bid(db: Session, auction_id: int, bid_data: schemas.BidCreate, user: U
         raise HTTPException(status_code=400, detail="Bid amount must be greater than current price")
 
     # Verify signature
-    # Message format: "Bid {amount} SOL on auction {id}"
     message = f"Bid {bid_data.amount} SOL on auction {auction_id}"
     if not verify_solana_signature(user.wallet_address, bid_data.signature, message) and bid_data.signature != "test-sig":
         raise HTTPException(status_code=400, detail="Invalid bid signature")
@@ -62,7 +62,7 @@ def place_bid(db: Session, auction_id: int, bid_data: schemas.BidCreate, user: U
     
     auction.current_price = bid_data.amount
     db.add(db_bid)
-    db.commit()
+    db.flush()
     db.refresh(db_bid)
     return db_bid
 
@@ -74,7 +74,7 @@ def finalize_auction(db: Session, auction: Auction):
     if highest_bid:
         auction.winner_id = highest_bid.user_id
     
-    db.commit()
+    db.flush()
     db.refresh(auction)
     return auction
 
@@ -84,7 +84,6 @@ def update_auction_status(db: Session, auction_id: int, status: AuctionStatus, u
     if not auction:
         raise HTTPException(status_code=404, detail="Auction not found")
     
-    # Example: mark as PAID by winner or system after checking SOL transaction
     if status == AuctionStatus.PAID:
         if user_id != auction.winner_id:
              raise HTTPException(status_code=403, detail="Only winner can pay")
@@ -92,7 +91,6 @@ def update_auction_status(db: Session, auction_id: int, status: AuctionStatus, u
         if not tx_signature:
             raise HTTPException(status_code=400, detail="Transaction signature is required for payment verification")
 
-        # In real scenario, wait/poll or check
         is_paid = verify_payment(
             tx_signature, 
             auction.current_price, 
@@ -103,12 +101,11 @@ def update_auction_status(db: Session, auction_id: int, status: AuctionStatus, u
         if not is_paid and tx_signature != "test-sig":
              raise HTTPException(status_code=400, detail="Payment verification failed")
     
-    # Example: mark as SHIPPED by owner
     if status == AuctionStatus.SHIPPED:
         if user_id != auction.owner_id:
             raise HTTPException(status_code=403, detail="Only owner can ship")
 
     auction.status = status
-    db.commit()
+    db.flush()
     db.refresh(auction)
     return auction
