@@ -60,7 +60,7 @@ PostgreSQL      Solana Network
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-org/4bid.git
+git clone https://github.com/sasas991/4bid.git
 cd 4bid
 
 # Start all services
