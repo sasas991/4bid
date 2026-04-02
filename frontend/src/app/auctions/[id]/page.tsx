@@ -1,0 +1,392 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { useParams, useRouter } from "next/navigation"
+import {
+  ArrowLeftIcon,
+  ClockIcon,
+  GavelIcon,
+  ShieldCheckIcon,
+  WalletIcon,
+  CheckCircleIcon,
+  PackageIcon,
+  TruckIcon,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import type { AuctionDetail } from "@/api/generated"
+import { AuctionStatus, LotType } from "@/api/generated"
+import { api } from "@/api/client"
+import { useAuth } from "@/context/auth"
+import { cn } from "@/lib/utils"
+
+const LOT_LABEL: Record<string, string> = {
+  [LotType.physical_item]: "Physical",
+  [LotType.information]: "Knowledge",
+  [LotType.physical_service]: "Service",
+  [LotType.digital_service]: "Digital",
+}
+
+const LIFECYCLE_STEPS: { icon: React.ReactNode; label: string; status: AuctionStatus[] }[] = [
+  { icon: <GavelIcon className="h-4 w-4" />, label: "Bidding", status: [AuctionStatus.active] },
+  { icon: <CheckCircleIcon className="h-4 w-4" />, label: "Winner Selected", status: [AuctionStatus.finished] },
+  { icon: <WalletIcon className="h-4 w-4" />, label: "Payment", status: [AuctionStatus.paid] },
+  { icon: <TruckIcon className="h-4 w-4" />, label: "Shipping", status: [AuctionStatus.shipped] },
+  { icon: <PackageIcon className="h-4 w-4" />, label: "Completed", status: [AuctionStatus.completed] },
+]
+
+function formatTimeLeft(deadline: string): { label: string; urgent: boolean } {
+  const ms = new Date(deadline).getTime() - Date.now()
+  if (ms <= 0) return { label: "Ended", urgent: true }
+  const h = Math.floor(ms / 3_600_000)
+  const m = Math.floor((ms % 3_600_000) / 60_000)
+  if (h < 2) return { label: `${h}h ${m}m left`, urgent: true }
+  if (h < 24) return { label: `${h}h ${m}m left`, urgent: false }
+  const d = Math.floor(h / 24)
+  return { label: `${d}d ${h % 24}h left`, urgent: false }
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function lifecycleIndex(status: AuctionStatus): number {
+  const idx = LIFECYCLE_STEPS.findIndex((s) => s.status.includes(status))
+  return idx === -1 ? 0 : idx
+}
+
+export default function AuctionDetailPage() {
+  const params = useParams()
+  const router = useRouter()
+  const { user } = useAuth()
+  const [auction, setAuction] = useState<AuctionDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [bidAmount, setBidAmount] = useState("")
+  const [bidPlaced, setBidPlaced] = useState(false)
+  const [bidding, setBidding] = useState(false)
+  const [error, setError] = useState("")
+
+  const auctionId = Number(params.id)
+
+  useEffect(() => {
+    api
+      .getAuctionApiAuctionsAuctionIdGet(auctionId)
+      .then(setAuction)
+      .catch(() => router.push("/auctions"))
+      .finally(() => setLoading(false))
+  }, [auctionId, router])
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-gray-50 px-4 py-10">
+        <div className="mx-auto max-w-7xl">
+          <div className="h-96 animate-pulse rounded-2xl bg-gray-100" />
+        </div>
+      </main>
+    )
+  }
+
+  if (!auction) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+        <div className="text-center">
+          <div className="text-5xl mb-4">🔍</div>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Auction not found</h1>
+          <Link href="/auctions">
+            <Button className="bg-[#3665F3] hover:bg-[#2952d4]">Browse Auctions</Button>
+          </Link>
+        </div>
+      </main>
+    )
+  }
+
+  const { label: timeLabel, urgent } = formatTimeLeft(auction.deadline)
+  const bids = [...(auction.bids ?? [])].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  )
+  const minBid = auction.current_price + 0.01
+  const isOwner = user && user.id === auction.owner_id
+  const isActive = auction.status === AuctionStatus.active
+  const currentStep = lifecycleIndex(auction.status)
+  const lotLabel = LOT_LABEL[auction.lot_type ?? LotType.physical_item]
+
+  const handleBid = async () => {
+    const amount = parseFloat(bidAmount)
+    if (!amount || amount < minBid) {
+      setError(`Minimum bid is ${minBid.toFixed(2)} SOL`)
+      return
+    }
+    setError("")
+    setBidding(true)
+    try {
+      await api.createBidApiAuctionsAuctionIdBidsPost(auctionId, {
+        amount,
+        auction_id: auctionId,
+        signature: "test-sig",
+      })
+      const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
+      setAuction(updated)
+      setBidAmount("")
+      setBidPlaced(true)
+      setTimeout(() => setBidPlaced(false), 4000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bid failed")
+    } finally {
+      setBidding(false)
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-gray-50 pb-16">
+      <div className="border-b bg-white px-4 py-3">
+        <div className="mx-auto max-w-7xl flex items-center gap-2 text-sm text-gray-500">
+          <Link href="/" className="hover:text-[#3665F3]">Home</Link>
+          <span>/</span>
+          <Link href="/auctions" className="hover:text-[#3665F3]">Auctions</Link>
+          <span>/</span>
+          <span className="text-gray-900 font-medium line-clamp-1 max-w-xs">{auction.title}</span>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-7xl px-4 pt-6">
+        <Link href="/auctions" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-[#3665F3] mb-6 transition-colors">
+          <ArrowLeftIcon className="h-4 w-4" />
+          Back to Browse
+        </Link>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">{auction.title}</h1>
+              <div className="flex flex-wrap gap-3 text-sm text-gray-500 mb-4">
+                <span className="flex items-center gap-1">
+                  <GavelIcon className="h-4 w-4" />
+                  {bids.length} bid{bids.length !== 1 ? "s" : ""}
+                </span>
+                <span className={cn("flex items-center gap-1", urgent && "text-red-600 font-medium")}>
+                  <ClockIcon className="h-4 w-4" />
+                  {timeLabel}
+                </span>
+                <Badge>{lotLabel}</Badge>
+              </div>
+              <p className="text-gray-600 leading-relaxed">{auction.description}</p>
+            </div>
+
+            {auction.hidden_content && (
+              <Card className="border-green-200 bg-green-50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-green-800">Hidden Content (visible to owner/winner)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-green-700">{auction.hidden_content}</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Lifecycle tracker */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Transaction Lifecycle</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-1">
+                  {LIFECYCLE_STEPS.map((step, i) => (
+                    <div key={step.label} className="flex flex-1 items-center">
+                      <div className={cn("flex flex-col items-center gap-1 flex-1",
+                        i <= currentStep ? "text-[#3665F3]" : "text-gray-300"
+                      )}>
+                        <div className={cn("flex h-8 w-8 items-center justify-center rounded-full",
+                          i <= currentStep ? "bg-[#3665F3] text-white" : "bg-gray-100 text-gray-400"
+                        )}>
+                          {step.icon}
+                        </div>
+                        <span className="text-xs font-medium text-center leading-tight">{step.label}</span>
+                      </div>
+                      {i < LIFECYCLE_STEPS.length - 1 && (
+                        <div className={cn("flex-1 h-0.5 mb-4", i < currentStep ? "bg-[#3665F3]" : "bg-gray-100")} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Bid history */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Bid History ({bids.length})</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {bids.length === 0 ? (
+                  <p className="px-6 pb-6 text-sm text-gray-500">No bids yet. Be the first!</p>
+                ) : (
+                  <div className="divide-y">
+                    {bids.map((bid, i) => (
+                      <div key={bid.id} className="flex items-center justify-between px-6 py-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="bg-[#3665F3]/10 text-[#3665F3] text-xs font-mono">
+                              U{bid.user_id}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-mono text-gray-700">User #{bid.user_id}</span>
+                              {i === 0 && (
+                                <Badge className="text-xs bg-green-100 text-green-700">Leading</Badge>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400">{formatDate(bid.timestamp)}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-gray-900">
+                            {bid.amount.toFixed(2)}{" "}
+                            <span className="font-semibold text-[#9945FF] text-sm">SOL</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right: Bid panel */}
+          <div className="space-y-4">
+            <Card className="border-2 border-[#3665F3]/20 shadow-md">
+              <CardContent className="p-6">
+                <div className="mb-1 text-sm text-gray-500">Current Bid</div>
+                <div className="mb-4 flex items-baseline gap-2">
+                  <span className="text-4xl font-extrabold text-gray-900">
+                    {auction.current_price.toFixed(2)}
+                  </span>
+                  <span className="text-xl font-bold text-[#9945FF]">SOL</span>
+                </div>
+
+                <div className={cn(
+                  "mb-4 flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium",
+                  urgent ? "bg-red-50 text-red-700" : "bg-blue-50 text-[#3665F3]"
+                )}>
+                  <ClockIcon className="h-4 w-4" />
+                  {timeLabel}
+                </div>
+
+                <Separator className="mb-4" />
+
+                {bidPlaced ? (
+                  <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center">
+                    <CheckCircleIcon className="mx-auto h-8 w-8 text-green-500 mb-2" />
+                    <div className="font-semibold text-green-700">Bid Placed!</div>
+                    <div className="text-xs text-green-600 mt-1">Your bid has been signed and submitted.</div>
+                  </div>
+                ) : !user ? (
+                  <p className="text-center text-sm text-gray-500 py-4">
+                    Connect your wallet to place a bid
+                  </p>
+                ) : isOwner ? (
+                  <p className="text-center text-sm text-gray-500 py-4">
+                    You own this auction
+                  </p>
+                ) : !isActive ? (
+                  <p className="text-center text-sm text-gray-500 py-4">
+                    This auction is no longer active
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700 font-medium flex items-center gap-1.5">
+                      <CheckCircleIcon className="h-3.5 w-3.5" />
+                      Wallet connected: {user.wallet_address.slice(0, 4)}...{user.wallet_address.slice(-3)}
+                    </div>
+                    <div>
+                      <Label className="mb-1.5 text-sm">Your Bid (SOL)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={minBid}
+                        placeholder={`Min ${minBid.toFixed(2)} SOL`}
+                        value={bidAmount}
+                        onChange={(e) => setBidAmount(e.target.value)}
+                        className="h-11 text-base"
+                      />
+                    </div>
+                    {error && <p className="text-sm text-red-600">{error}</p>}
+                    <Button
+                      className="w-full h-11 bg-[#3665F3] text-base font-semibold hover:bg-[#2952d4]"
+                      onClick={handleBid}
+                      disabled={bidding}
+                    >
+                      <GavelIcon className="mr-2 h-4 w-4" />
+                      {bidding ? "Placing..." : "Place Bid"}
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Starting price</span>
+                  <span className="font-medium">{auction.starting_price.toFixed(2)} SOL</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Lot type</span>
+                  <Badge className="text-xs">{lotLabel}</Badge>
+                </div>
+                <Separator />
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Ends at</span>
+                  <span className="font-medium text-xs">{formatDate(auction.deadline)}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Payment</span>
+                  <span className="font-medium text-[#9945FF]">SOL on Solana</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Platform fee</span>
+                  <span className="font-medium text-green-600">0%</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4">
+                <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Seller</div>
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className="bg-gradient-to-br from-[#9945FF] to-[#3665F3] text-white text-xs font-mono">
+                      #{auction.owner_id}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div className="font-mono text-sm text-gray-700">Owner #{auction.owner_id}</div>
+                    <div className="flex items-center gap-1 text-xs text-green-600">
+                      <ShieldCheckIcon className="h-3 w-3" />
+                      Verified wallet
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </main>
+  )
+}

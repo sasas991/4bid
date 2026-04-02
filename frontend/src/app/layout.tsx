@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "4bid — Solana Auctions",
-  description: "Decentralized auction platform on Solana",
+  title: "4BID — Decentralized Auction on Solana",
+  description:
+    "Bid, win, and pay without intermediaries. The first decentralized auction platform on Solana — wallet-based identity, signed bids, SOL payments.",
 };
 
 export default function RootLayout({
@@ -28,7 +29,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col bg-gray-50">
         <Providers>{children}</Providers>
       </body>
     </html>
