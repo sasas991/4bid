@@ -1,16 +1,11 @@
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
-# Copy requirements
-COPY requirements.txt .
+COPY pyproject.toml .
 
-# Install dependencies using uv
-RUN pip install --no-cache-dir --system -r requirements.txt
+RUN pip install --no-cache-dir .
 
-# Copy project files
 COPY . .
 
-RUN alembic upgrade head
-
-RUN fastapi run main.py
+CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]
