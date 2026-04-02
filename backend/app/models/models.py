@@ -42,7 +42,7 @@ class Auction(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)
     description = Column(Text, nullable=True)
-    lot_type = Column(Enum(LotType), default=LotType.PHYSICAL_ITEM)
+    lot_type = Column(Enum(LotType, values_callable=lambda e: [x.value for x in e]), default=LotType.PHYSICAL_ITEM)
     
     # For 'information' type: content only visible to winner after payment
     hidden_content = Column(Text, nullable=True) 
@@ -50,7 +50,7 @@ class Auction(Base):
     starting_price = Column(Float, nullable=False)
     current_price = Column(Float, nullable=False)
     deadline = Column(DateTime, nullable=False)
-    status = Column(Enum(AuctionStatus), default=AuctionStatus.ACTIVE)
+    status = Column(Enum(AuctionStatus, values_callable=lambda e: [x.value for x in e]), default=AuctionStatus.ACTIVE)
     
     owner_id = Column(Integer, ForeignKey("users.id"))
     winner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -85,7 +85,7 @@ class Escrow(Base):
     id = Column(Integer, primary_key=True, index=True)
     auction_id = Column(Integer, ForeignKey("auctions.id"), unique=True)
     amount = Column(Float, nullable=False)
-    status = Column(Enum(EscrowStatus), default=EscrowStatus.HELD)
+    status = Column(Enum(EscrowStatus, values_callable=lambda e: [x.value for x in e]), default=EscrowStatus.HELD)
     
     tx_signature = Column(String, nullable=False) # The payment TX from buyer
     

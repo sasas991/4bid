@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import aiohttp
+import traceback
 from .api import api_router
 from .core.config import settings
 from .core.database import SessionLocal, engine
@@ -32,7 +34,8 @@ async def db_session_middleware(request: Request, call_next):
             request.state.db.rollback()
     except Exception as e:
         request.state.db.rollback()
-        raise e
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"detail": str(e)})
     finally:
         request.state.db.close()
     return response
