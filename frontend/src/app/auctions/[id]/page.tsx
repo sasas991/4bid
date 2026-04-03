@@ -12,6 +12,9 @@ import {
   CheckCircleIcon,
   PackageIcon,
   TruckIcon,
+  XCircleIcon,
+  ChevronDownIcon,
+  InfoIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +28,7 @@ import { AuctionStatus, LotType } from "@/api/generated"
 import { api } from "@/api/client"
 import { useAuth } from "@/context/auth"
 import { cn } from "@/lib/utils"
+import { formatDateTimeRu, formatTimeLeftRu } from "@/lib/date"
 
 const LOT_LABEL: Record<string, string> = {
   [LotType.physical_item]: "Physical",
@@ -41,26 +45,6 @@ const LIFECYCLE_STEPS: { icon: React.ReactNode; label: string; status: AuctionSt
   { icon: <PackageIcon className="h-4 w-4" />, label: "Completed", status: [AuctionStatus.completed] },
 ]
 
-function formatTimeLeft(deadline: string): { label: string; urgent: boolean } {
-  const ms = new Date(deadline).getTime() - Date.now()
-  if (ms <= 0) return { label: "Ended", urgent: true }
-  const h = Math.floor(ms / 3_600_000)
-  const m = Math.floor((ms % 3_600_000) / 60_000)
-  if (h < 2) return { label: `${h}h ${m}m left`, urgent: true }
-  if (h < 24) return { label: `${h}h ${m}m left`, urgent: false }
-  const d = Math.floor(h / 24)
-  return { label: `${d}d ${h % 24}h left`, urgent: false }
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
-
 function lifecycleIndex(status: AuctionStatus): number {
   const idx = LIFECYCLE_STEPS.findIndex((s) => s.status.includes(status))
   return idx === -1 ? 0 : idx
@@ -75,6 +59,10 @@ export default function AuctionDetailPage() {
   const [bidAmount, setBidAmount] = useState("")
   const [bidPlaced, setBidPlaced] = useState(false)
   const [bidding, setBidding] = useState(false)
+  const [finishing, setFinishing] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [statusUpdating, setStatusUpdating] = useState(false)
+  const [infoOpen, setInfoOpen] = useState(false)
   const [error, setError] = useState("")
 
   const auctionId = Number(params.id)
@@ -111,12 +99,17 @@ export default function AuctionDetailPage() {
     )
   }
 
-  const { label: timeLabel, urgent } = formatTimeLeft(auction.deadline)
+  const { label: timeLabel, urgent } = formatTimeLeftRu(auction.deadline)
   const bids = [...(auction.bids ?? [])].sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   )
   const minBid = auction.current_price + 0.01
   const isOwner = user && user.id === auction.owner_id
+  const isWinner = user && user.id === auction.winner_id
+  const highestBid = auction.bids?.length
+    ? [...auction.bids].sort((a, b) => b.amount - a.amount)[0]
+    : null
+  const isLeadingBidder = !!(user && highestBid && highestBid.user_id === user.id)
   const isActive = auction.status === AuctionStatus.active
   const currentStep = lifecycleIndex(auction.status)
   const lotLabel = LOT_LABEL[auction.lot_type ?? LotType.physical_item]
@@ -144,6 +137,51 @@ export default function AuctionDetailPage() {
       setError(err instanceof Error ? err.message : "Bid failed")
     } finally {
       setBidding(false)
+    }
+  }
+
+  const handleFinishAuction = async () => {
+    setError("")
+    setFinishing(true)
+    try {
+      const updated = await api.updateAuctionStatusApiAuctionsAuctionIdStatusPatch(auctionId, {
+        status: AuctionStatus.finished,
+      })
+      setAuction((prev) => (prev ? { ...prev, ...updated } : prev))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось завершить аукцион")
+    } finally {
+      setFinishing(false)
+    }
+  }
+
+  const handleCancelBid = async () => {
+    setError("")
+    setCancelling(true)
+    try {
+      await api.cancelBidApiAuctionsAuctionIdBidsDelete(auctionId)
+      const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
+      setAuction(updated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось отменить ставку")
+    } finally {
+      setCancelling(false)
+    }
+  }
+
+  const handleStatusUpdate = async (status: AuctionStatus, txSig?: string) => {
+    setError("")
+    setStatusUpdating(true)
+    try {
+      const updated = await api.updateAuctionStatusApiAuctionsAuctionIdStatusPatch(auctionId, {
+        status,
+        tx_signature: txSig ?? null,
+      })
+      setAuction((prev) => (prev ? { ...prev, ...updated } : prev))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось обновить статус")
+    } finally {
+      setStatusUpdating(false)
     }
   }
 
@@ -247,7 +285,7 @@ export default function AuctionDetailPage() {
                                 <Badge className="text-xs bg-green-100 text-green-700">Leading</Badge>
                               )}
                             </div>
-                            <div className="text-xs text-gray-400">{formatDate(bid.timestamp)}</div>
+                            <div className="text-xs text-gray-400">{formatDateTimeRu(bid.timestamp)}</div>
                           </div>
                         </div>
                         <div className="text-right">
@@ -297,12 +335,64 @@ export default function AuctionDetailPage() {
                     Connect your wallet to place a bid
                   </p>
                 ) : isOwner ? (
-                  <p className="text-center text-sm text-gray-500 py-4">
-                    You own this auction
-                  </p>
+                  <div className="space-y-3">
+                    <p className="text-center text-sm text-gray-500 py-1">
+                      Вы владелец этого аукциона
+                    </p>
+                    {isActive && (
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleFinishAuction}
+                        disabled={finishing}
+                      >
+                        {finishing ? "Завершаем..." : "Завершить досрочно"}
+                      </Button>
+                    )}
+                    {auction.status === AuctionStatus.paid && (
+                      <Button
+                        className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
+                        onClick={() => handleStatusUpdate(AuctionStatus.shipped)}
+                        disabled={statusUpdating}
+                      >
+                        <TruckIcon className="mr-2 h-4 w-4" />
+                        {statusUpdating ? "Отправляем..." : "Подтвердить отправку"}
+                      </Button>
+                    )}
+                  </div>
+                ) : isWinner ? (
+                  <div className="space-y-3">
+                    <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700 font-medium flex items-center gap-1.5">
+                      <CheckCircleIcon className="h-3.5 w-3.5" />
+                      Вы выиграли этот аукцион!
+                    </div>
+                    {auction.status === AuctionStatus.finished && (
+                      <Button
+                        className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
+                        onClick={() => handleStatusUpdate(AuctionStatus.paid, "test-sig")}
+                        disabled={statusUpdating}
+                      >
+                        <WalletIcon className="mr-2 h-4 w-4" />
+                        {statusUpdating ? "Оплачиваем..." : `Оплатить ${auction.current_price.toFixed(2)} SOL`}
+                      </Button>
+                    )}
+                    {auction.status === AuctionStatus.shipped && (
+                      <Button
+                        className="w-full bg-green-600 hover:bg-green-700"
+                        onClick={() => handleStatusUpdate(AuctionStatus.completed)}
+                        disabled={statusUpdating}
+                      >
+                        <PackageIcon className="mr-2 h-4 w-4" />
+                        {statusUpdating ? "Подтверждаем..." : "Подтвердить получение"}
+                      </Button>
+                    )}
+                    {auction.status === AuctionStatus.paid && (
+                      <p className="text-center text-sm text-gray-500">Ожидайте отправку от продавца</p>
+                    )}
+                  </div>
                 ) : !isActive ? (
                   <p className="text-center text-sm text-gray-500 py-4">
-                    This auction is no longer active
+                    Аукцион завершён
                   </p>
                 ) : (
                   <div className="space-y-3">
@@ -331,38 +421,105 @@ export default function AuctionDetailPage() {
                       <GavelIcon className="mr-2 h-4 w-4" />
                       {bidding ? "Placing..." : "Place Bid"}
                     </Button>
+                    {isLeadingBidder && (
+                      <Button
+                        variant="outline"
+                        className="w-full text-red-600 border-red-200 hover:bg-red-50"
+                        onClick={handleCancelBid}
+                        disabled={cancelling}
+                      >
+                        <XCircleIcon className="mr-2 h-4 w-4" />
+                        {cancelling ? "Отменяем..." : "Отменить ставку"}
+                      </Button>
+                    )}
                   </div>
                 )}
+                {error && !isActive && <p className="text-sm text-red-600 mt-2">{error}</p>}
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Starting price</span>
-                  <span className="font-medium">{auction.starting_price.toFixed(2)} SOL</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Lot type</span>
-                  <Badge className="text-xs">{lotLabel}</Badge>
-                </div>
-                <Separator />
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Ends at</span>
-                  <span className="font-medium text-xs">{formatDate(auction.deadline)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Payment</span>
-                  <span className="font-medium text-[#9945FF]">SOL on Solana</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Platform fee</span>
-                  <span className="font-medium text-green-600">0%</span>
-                </div>
-              </CardContent>
+              <button
+                onClick={() => setInfoOpen((v) => !v)}
+                className="flex w-full items-center justify-between p-4 text-left"
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <InfoIcon className="h-4 w-4" />
+                  Подробная информация
+                </span>
+                <ChevronDownIcon className={cn("h-4 w-4 text-gray-400 transition-transform", infoOpen && "rotate-180")} />
+              </button>
+              {infoOpen && (
+                <CardContent className="px-4 pb-4 pt-0 space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Starting price</span>
+                    <span className="font-medium">{auction.starting_price.toFixed(2)} SOL</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Current price</span>
+                    <span className="font-bold">{auction.current_price.toFixed(2)} SOL</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Lot type</span>
+                    <Badge className="text-xs">{lotLabel}</Badge>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Status</span>
+                    <Badge variant="outline" className="text-xs capitalize">{auction.status}</Badge>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total bids</span>
+                    <span className="font-medium">{bids.length}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Ends at</span>
+                    <span className="font-medium text-xs">{formatDateTimeRu(auction.deadline)}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Created</span>
+                    <span className="font-medium text-xs">{formatDateTimeRu(auction.created_at)}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Auction ID</span>
+                    <span className="font-mono text-xs text-gray-600">#{auction.id}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Payment</span>
+                    <span className="font-medium text-[#9945FF]">SOL on Solana</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Platform fee</span>
+                    <span className="font-medium text-green-600">0%</span>
+                  </div>
+                  {auction.winner_id && (
+                    <>
+                      <Separator />
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Winner</span>
+                        <span className="font-mono text-xs">User #{auction.winner_id}</span>
+                      </div>
+                    </>
+                  )}
+                  {auction.escrow && (
+                    <>
+                      <Separator />
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Escrow</span>
+                        <Badge variant="outline" className="text-xs capitalize">{auction.escrow.status}</Badge>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              )}
             </Card>
 
             <Card>

@@ -44,8 +44,10 @@ class Auction(Base):
     description = Column(Text, nullable=True)
     lot_type = Column(Enum(LotType, values_callable=lambda e: [x.value for x in e]), default=LotType.PHYSICAL_ITEM)
     
+    image_url = Column(String, nullable=True)
+
     # For 'information' type: content only visible to winner after payment
-    hidden_content = Column(Text, nullable=True) 
+    hidden_content = Column(Text, nullable=True)
     
     starting_price = Column(Float, nullable=False)
     current_price = Column(Float, nullable=False)

@@ -5,14 +5,8 @@ import Link from "next/link";
 import type { Auction, Bid } from "@/api/generated";
 import { api } from "@/api/client";
 import { useAuth } from "@/context/auth";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { AuctionCard } from "@/components/auction-card";
+import { formatDateTimeRu } from "@/lib/date";
 
 export default function MyAuctionsPage() {
   const { user } = useAuth();
@@ -36,73 +30,78 @@ export default function MyAuctionsPage() {
 
   if (!user) {
     return (
-      <div className="py-20 text-center text-muted-foreground">
-        Connect your wallet to see your auctions.
-      </div>
+      <main className="flex min-h-[50vh] items-center justify-center">
+        <p className="text-gray-500">Connect your wallet to see your auctions.</p>
+      </main>
     );
   }
 
   if (loading) {
-    return <div className="h-48 animate-pulse rounded-xl bg-muted" />;
+    return (
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        <div className="h-48 animate-pulse rounded-xl bg-gray-100" />
+      </main>
+    );
   }
 
   return (
-    <div className="space-y-8">
-      <section className="space-y-4">
-        <h1 className="text-2xl font-bold">My Auctions</h1>
-        {auctions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            You haven&apos;t created any auctions yet.
-          </p>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {auctions.map((a) => (
-              <Link key={a.id} href={`/auction/${a.id}`}>
-                <Card className="transition-colors hover:border-foreground/20">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">{a.title}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pb-2">
-                    <Badge>{a.status}</Badge>
-                  </CardContent>
-                  <CardFooter>
-                    <span className="font-semibold">
-                      {a.current_price.toFixed(2)} SOL
-                    </span>
-                  </CardFooter>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+    <main className="min-h-screen bg-gray-50">
+      <div className="border-b bg-white px-4 py-6">
+        <div className="mx-auto max-w-7xl">
+          <h1 className="text-2xl font-bold text-gray-900">My Auctions</h1>
+        </div>
+      </div>
 
-      <section className="space-y-4">
-        <h2 className="text-xl font-bold">My Bids</h2>
-        {bids.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            You haven&apos;t placed any bids yet.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {bids.map((bid) => (
-              <Link key={bid.id} href={`/auction/${bid.auction_id}`}>
-                <div className="flex items-center justify-between rounded-lg border p-3 text-sm transition-colors hover:bg-muted">
-                  <span>Auction #{bid.auction_id}</span>
-                  <div>
-                    <span className="font-semibold">
-                      {bid.amount.toFixed(2)} SOL
-                    </span>
-                    <span className="ml-2 text-muted-foreground">
-                      {new Date(bid.timestamp).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
+      <div className="mx-auto max-w-7xl px-4 py-6 space-y-10">
+        <section>
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">Created by me</h2>
+          {auctions.length === 0 ? (
+            <div className="rounded-xl border bg-white p-8 text-center">
+              <p className="text-sm text-gray-500">You haven&apos;t created any auctions yet.</p>
+              <Link href="/create" className="mt-2 inline-block text-sm text-[#3665F3] hover:underline">
+                Create your first auction
               </Link>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {auctions.map((a) => (
+                <AuctionCard key={a.id} auction={a} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">My Bids</h2>
+          {bids.length === 0 ? (
+            <div className="rounded-xl border bg-white p-8 text-center">
+              <p className="text-sm text-gray-500">You haven&apos;t placed any bids yet.</p>
+              <Link href="/auctions" className="mt-2 inline-block text-sm text-[#3665F3] hover:underline">
+                Browse auctions
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {bids.map((bid) => (
+                <Link key={bid.id} href={`/auctions/${bid.auction_id}`}>
+                  <div className="flex items-center justify-between rounded-xl border bg-white p-4 text-sm transition-colors hover:border-[#3665F3]/30">
+                    <span className="font-medium text-gray-900">Auction #{bid.auction_id}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-gray-900">
+                        {bid.amount.toFixed(2)}{" "}
+                        <span className="text-[#9945FF] font-semibold">SOL</span>
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {formatDateTimeRu(bid.timestamp)}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }

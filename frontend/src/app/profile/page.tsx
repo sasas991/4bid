@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { formatDateRu } from "@/lib/date";
 
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth();
@@ -18,7 +19,9 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
 
   const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
+  const [depositing, setDepositing] = useState(false);
   const [error, setError] = useState("");
 
   if (!user) {
@@ -64,6 +67,28 @@ export default function ProfilePage() {
       setError("Withdrawal failed");
     } finally {
       setWithdrawing(false);
+    }
+  };
+
+  const handleDeposit = async () => {
+    const amount = parseFloat(depositAmount);
+    if (!amount || amount <= 0) {
+      setError("Invalid deposit amount");
+      return;
+    }
+    setError("");
+    setDepositing(true);
+    try {
+      await api.depositFundsApiUsersDepositPost({
+        amount,
+        signature: "test-sig",
+      });
+      await refreshUser();
+      setDepositAmount("");
+    } catch {
+      setError("Deposit failed");
+    } finally {
+      setDepositing(false);
     }
   };
 
@@ -138,7 +163,7 @@ export default function ProfilePage() {
           <div>
             <Label className="text-muted-foreground">Member since</Label>
             <p className="text-sm">
-              {new Date(user.created_at).toLocaleDateString()}
+              {formatDateRu(user.created_at)}
             </p>
           </div>
         </CardContent>
@@ -153,6 +178,25 @@ export default function ProfilePage() {
             {user.balance.toFixed(2)}{" "}
             <span className="text-lg text-muted-foreground">SOL</span>
           </p>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <Label htmlFor="deposit">Deposit (SOL)</Label>
+            <div className="flex gap-2">
+              <Input
+                id="deposit"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+              />
+              <Button onClick={handleDeposit} disabled={depositing}>
+                {depositing ? "..." : "Deposit"}
+              </Button>
+            </div>
+          </div>
 
           <Separator />
 

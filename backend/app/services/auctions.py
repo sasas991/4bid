@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 from ..models.models import Auction, Bid, AuctionStatus, User, Escrow, EscrowStatus, LotType
 from ..schemas import schemas
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from .auth import verify_solana_signature
 from .solana import verify_payment
@@ -20,8 +20,13 @@ def get_active_auctions(db: Session, skip: int = 0, limit: int = 10):
     return db.query(Auction).filter(Auction.status == AuctionStatus.ACTIVE).offset(skip).limit(limit).all()
 
 def create_auction(db: Session, auction: schemas.AuctionCreate, owner_id: int):
+    deadline = auction.deadline
+    if deadline.tzinfo is not None:
+        deadline = deadline.astimezone(timezone.utc).replace(tzinfo=None)
+
     db_auction = Auction(
-        **auction.model_dump(),
+        **auction.model_dump(exclude={"deadline"}),
+        deadline=deadline,
         current_price=auction.starting_price,
         owner_id=owner_id,
         status=AuctionStatus.ACTIVE
@@ -73,6 +78,53 @@ def finalize_auction(db: Session, auction: Auction):
     db.refresh(auction)
     return auction
 
+def cancel_bid(db: Session, auction_id: int, user_id: int):
+    auction = (
+        db.query(Auction)
+        .filter(Auction.id == auction_id)
+        .with_for_update()
+        .first()
+    )
+    if not auction:
+        raise HTTPException(status_code=404, detail="Auction not found")
+
+    if auction.status != AuctionStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400, detail="Can only cancel bids on active auctions"
+        )
+
+    if auction.deadline < datetime.utcnow():
+        finalize_auction(db, auction)
+        raise HTTPException(status_code=400, detail="Auction has expired")
+
+    latest_bid = (
+        db.query(Bid)
+        .filter(Bid.auction_id == auction_id)
+        .order_by(Bid.amount.desc())
+        .first()
+    )
+    if not latest_bid or latest_bid.user_id != user_id:
+        raise HTTPException(
+            status_code=403, detail="Only the leading bidder can cancel"
+        )
+
+    db.delete(latest_bid)
+
+    previous_bid = (
+        db.query(Bid)
+        .filter(Bid.auction_id == auction_id, Bid.id != latest_bid.id)
+        .order_by(Bid.amount.desc())
+        .first()
+    )
+    auction.current_price = (
+        previous_bid.amount if previous_bid else auction.starting_price
+    )
+
+    db.flush()
+    db.refresh(auction)
+    return auction
+
+
 def update_auction_status(db: Session, auction_id: int, status: AuctionStatus, user_id: int, tx_signature: Optional[str] = None):
     auction = db.query(Auction).options(
         joinedload(Auction.owner), 
@@ -82,6 +134,14 @@ def update_auction_status(db: Session, auction_id: int, status: AuctionStatus, u
     if not auction:
         raise HTTPException(status_code=404, detail="Auction not found")
     
+    # 0. Owner can finish auction early
+    if status == AuctionStatus.FINISHED:
+        if user_id != auction.owner_id:
+            raise HTTPException(status_code=403, detail="Only owner can finish auction")
+        if auction.status != AuctionStatus.ACTIVE:
+            raise HTTPException(status_code=400, detail="Only active auctions can be finished")
+        return finalize_auction(db, auction)
+
     # 1. Payment Verification & Escrow HELD
     if status == AuctionStatus.PAID:
         if user_id != auction.winner_id:

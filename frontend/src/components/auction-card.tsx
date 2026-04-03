@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import type { Auction } from "@/api/generated"
 import { LotType } from "@/api/generated"
 import { cn } from "@/lib/utils"
+import { formatTimeLeftRu } from "@/lib/date"
 
 const LOT_STYLE: Record<string, { label: string; icon: string; color: string }> = {
   [LotType.physical_item]: { label: "Physical", icon: "📦", color: "from-slate-600 to-slate-900" },
@@ -16,24 +17,13 @@ const LOT_STYLE: Record<string, { label: string; icon: string; color: string }> 
   [LotType.digital_service]: { label: "Digital", icon: "💻", color: "from-teal-500 to-emerald-800" },
 }
 
-function formatTimeLeft(deadline: string): { label: string; urgent: boolean } {
-  const ms = new Date(deadline).getTime() - Date.now()
-  if (ms <= 0) return { label: "Ended", urgent: true }
-  const h = Math.floor(ms / 3_600_000)
-  const m = Math.floor((ms % 3_600_000) / 60_000)
-  if (h < 2) return { label: `${h}h ${m}m left`, urgent: true }
-  if (h < 24) return { label: `${h}h ${m}m left`, urgent: false }
-  const d = Math.floor(h / 24)
-  return { label: `${d}d ${h % 24}h left`, urgent: false }
-}
-
 interface AuctionCardProps {
   auction: Auction
   className?: string
 }
 
 export function AuctionCard({ auction, className }: AuctionCardProps) {
-  const { label: timeLabel, urgent } = formatTimeLeft(auction.deadline)
+  const { label: timeLabel, urgent } = formatTimeLeftRu(auction.deadline)
   const style = LOT_STYLE[auction.lot_type ?? LotType.physical_item]
 
   return (
@@ -44,13 +34,14 @@ export function AuctionCard({ auction, className }: AuctionCardProps) {
           className
         )}
       >
-        <div
-          className={cn(
-            "relative flex h-44 items-center justify-center bg-gradient-to-br text-5xl",
-            style.color
+        <div className={cn("relative h-44 overflow-hidden", !auction.image_url && "bg-gradient-to-br", !auction.image_url && style.color)}>
+          {auction.image_url ? (
+            <img src={auction.image_url} alt={auction.title} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center text-5xl">
+              <span>{style.icon}</span>
+            </div>
           )}
-        >
-          <span>{style.icon}</span>
           <div className="absolute left-2 top-2 flex flex-wrap gap-1">
             <Badge className="text-xs">{style.label}</Badge>
           </div>

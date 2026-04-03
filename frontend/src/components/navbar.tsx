@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { SearchIcon, WalletIcon, PlusCircleIcon, ZapIcon } from "lucide-react"
+import { SearchIcon, WalletIcon, PlusCircleIcon, ZapIcon, LogOutIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -101,17 +101,31 @@ export function Navbar() {
             {isLoading ? (
               <div className="h-9 w-24 animate-pulse rounded-lg bg-gray-200" />
             ) : user ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-9 gap-1.5 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200"
-                onClick={logout}
-              >
-                <WalletIcon className="h-4 w-4" />
-                <span className="hidden sm:inline font-mono text-xs">
-                  {user.wallet_address.slice(0, 4)}...{user.wallet_address.slice(-3)}
-                </span>
-              </Button>
+              <>
+                <Link href="/profile">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-9 gap-1.5 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200"
+                  >
+                    <WalletIcon className="h-4 w-4" />
+                    <span className="hidden sm:inline font-mono text-xs">
+                      {user.wallet_address.slice(0, 4)}...{user.wallet_address.slice(-3)}
+                    </span>
+                  </Button>
+                </Link>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-gray-400 hover:text-red-500"
+                  onClick={() => {
+                    if (window.confirm("Выйти из аккаунта?")) logout()
+                  }}
+                  title="Выйти"
+                >
+                  <LogOutIcon className="h-4 w-4" />
+                </Button>
+              </>
             ) : (
               <Button
                 size="sm"

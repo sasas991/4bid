@@ -28,6 +28,21 @@ def update_user_me(
     db.refresh(current_user)
     return current_user
 
+@router.post("/deposit", response_model=schemas.User)
+def deposit_funds(
+    request: schemas.DepositRequest,
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if request.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+
+    current_user.balance += request.amount
+
+    db.flush()
+    db.refresh(current_user)
+    return current_user
+
 @router.post("/withdraw", response_model=schemas.User)
 def withdraw_funds(
     request: schemas.WithdrawRequest,

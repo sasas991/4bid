@@ -58,6 +58,15 @@ def get_auction(
     detail = schemas.AuctionDetail.model_validate(auction, from_attributes=True)
     return detail.model_copy(update={"hidden_content": visible_hidden})
 
+@router.delete("/{auction_id}/bids", response_model=schemas.Auction)
+def cancel_bid(
+    auction_id: int,
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+):
+    return auction_service.cancel_bid(db, auction_id, current_user.id)
+
+
 @router.post("/{auction_id}/bids", response_model=schemas.Bid)
 def create_bid(
     auction_id: int,

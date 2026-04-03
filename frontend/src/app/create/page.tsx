@@ -14,6 +14,9 @@ import { LotType } from "@/api/generated"
 import { api } from "@/api/client"
 import { useAuth } from "@/context/auth"
 
+const MIN_AUCTION_MINUTES = 1
+const MAX_AUCTION_DAYS = 30
+
 const LOT_TYPES = [
   { value: LotType.physical_item, label: "Physical Good", desc: "Electronics, clothing, collectibles, etc.", icon: "📦" },
   { value: LotType.physical_service, label: "Service", desc: "Design, development, consulting, etc.", icon: "⚙️" },
@@ -22,12 +25,12 @@ const LOT_TYPES = [
 ]
 
 const DURATIONS = [
-  { value: "1", label: "1 hour" },
-  { value: "6", label: "6 hours" },
-  { value: "12", label: "12 hours" },
-  { value: "24", label: "1 day" },
-  { value: "72", label: "3 days" },
-  { value: "168", label: "7 days" },
+  { value: "1", label: "1 час" },
+  { value: "6", label: "6 часов" },
+  { value: "12", label: "12 часов" },
+  { value: "24", label: "1 день" },
+  { value: "72", label: "3 дня" },
+  { value: "168", label: "7 дней" },
 ]
 
 export default function CreateAuctionPage() {
@@ -36,6 +39,7 @@ export default function CreateAuctionPage() {
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const [imageError, setImageError] = useState("")
 
   const [form, setForm] = useState({
     title: "",
@@ -43,20 +47,33 @@ export default function CreateAuctionPage() {
     lotType: "" as LotType | "",
     startingPrice: "",
     duration: "24",
+    customDeadline: "",
+    useCustomDeadline: false,
     hiddenContent: "",
+    imageUrl: "",
   })
 
-  const updateForm = (field: string, value: string) =>
+  const updateForm = (field: string, value: string | boolean) =>
     setForm((prev) => ({ ...prev, [field]: value }))
 
-  const canProceedStep1 =
-    form.title.trim().length >= 3 &&
-    form.description.trim().length >= 10 &&
-    form.lotType
+  const canProceedStep1 = form.title.trim().length >= 1 && form.lotType !== ""
 
   const canProceedStep2 =
     form.startingPrice &&
-    parseFloat(form.startingPrice) > 0
+    parseFloat(form.startingPrice) > 0 &&
+    (form.useCustomDeadline ? form.customDeadline !== "" : true)
+
+  const parseLocalDatetime = (value: string): Date => {
+    const [datePart, timePart] = value.split("T")
+    const [year, month, day] = datePart.split("-").map(Number)
+    const [hour, minute] = timePart.split(":").map(Number)
+    return new Date(year, month - 1, day, hour, minute, 0, 0)
+  }
+
+  const toLocalInputValue = (date: Date): string => {
+    const pad = (n: number) => String(n).padStart(2, "0")
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  }
 
   if (!user) {
     return (
@@ -72,19 +89,71 @@ export default function CreateAuctionPage() {
     )
   }
 
+  const getDeadline = (): string => {
+    if (form.useCustomDeadline && form.customDeadline) {
+      return parseLocalDatetime(form.customDeadline).toISOString()
+    }
+    return new Date(Date.now() + parseInt(form.duration) * 3_600_000).toISOString()
+  }
+
+  const validateDeadline = (): string | null => {
+    const deadline = new Date(getDeadline()).getTime()
+    const minAllowed = Date.now() + MIN_AUCTION_MINUTES * 60_000
+    const maxAllowed = Date.now() + MAX_AUCTION_DAYS * 24 * 60 * 60_000
+
+    if (deadline < minAllowed) return `Минимальная длительность аукциона: ${MIN_AUCTION_MINUTES} минута`
+    if (deadline > maxAllowed) return `Максимальная длительность аукциона: ${MAX_AUCTION_DAYS} дней`
+    return null
+  }
+
+  const handleImageUpload = async (file: File | null) => {
+    if (!file) return
+    setImageError("")
+
+    if (!file.type.startsWith("image/")) {
+      setImageError("Можно загрузить только изображение")
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError("Максимальный размер изображения: 5MB")
+      return
+    }
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+    updateForm("imageUrl", dataUrl)
+  }
+
+  const getDeadlineLabel = (): string => {
+    if (form.useCustomDeadline && form.customDeadline) {
+      return new Date(form.customDeadline).toLocaleString("ru-RU")
+    }
+    return DURATIONS.find((d) => d.value === form.duration)?.label ?? ""
+  }
+
   const handleSubmit = async () => {
     if (!form.lotType) return
     setError("")
+    const deadlineError = validateDeadline()
+    if (deadlineError) {
+      setError(deadlineError)
+      return
+    }
     setSubmitting(true)
     try {
-      const deadline = new Date(Date.now() + parseInt(form.duration) * 3_600_000)
       const auction = await api.createAuctionApiAuctionsPost({
         title: form.title,
         description: form.description || undefined,
         lot_type: form.lotType,
         starting_price: parseFloat(form.startingPrice),
-        deadline: deadline.toISOString(),
+        deadline: getDeadline(),
         hidden_content: form.hiddenContent || undefined,
+        image_url: form.imageUrl || undefined,
       })
       router.push(`/auctions/${auction.id}`)
     } catch (err) {
@@ -169,7 +238,7 @@ export default function CreateAuctionPage() {
               </div>
 
               <div>
-                <Label htmlFor="desc" className="mb-1.5 block">Description *</Label>
+                <Label htmlFor="desc" className="mb-1.5 block">Description</Label>
                 <textarea
                   id="desc"
                   rows={4}
@@ -178,6 +247,39 @@ export default function CreateAuctionPage() {
                   value={form.description}
                   onChange={(e) => updateForm("description", e.target.value)}
                 />
+              </div>
+
+              <div>
+                <Label htmlFor="imageUrl" className="mb-1.5 block">Image URL</Label>
+                <Input
+                  id="imageUrl"
+                  type="url"
+                  placeholder="https://example.com/image.jpg"
+                  value={form.imageUrl}
+                  onChange={(e) => updateForm("imageUrl", e.target.value)}
+                  className="h-10"
+                />
+                <div className="mt-2">
+                  <Label htmlFor="imageUpload" className="mb-1.5 block text-xs text-gray-500">или загрузите файл</Label>
+                  <Input
+                    id="imageUpload"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => void handleImageUpload(e.target.files?.[0] ?? null)}
+                    className="h-10"
+                  />
+                </div>
+                {imageError && <p className="mt-2 text-sm text-red-600">{imageError}</p>}
+                {form.imageUrl && (
+                  <div className="mt-2 rounded-lg overflow-hidden border max-h-48">
+                    <img
+                      src={form.imageUrl}
+                      alt="Preview"
+                      className="w-full h-48 object-cover"
+                      onError={(e) => (e.currentTarget.style.display = "none")}
+                    />
+                  </div>
+                )}
               </div>
 
               {form.lotType === LotType.information && (
@@ -230,22 +332,42 @@ export default function CreateAuctionPage() {
               </div>
 
               <div>
-                <Label className="mb-2 block">Duration</Label>
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                  {DURATIONS.map((d) => (
-                    <button
-                      key={d.value}
-                      onClick={() => updateForm("duration", d.value)}
-                      className={`rounded-lg border px-3 py-2 text-sm transition-all ${
-                        form.duration === d.value
-                          ? "border-[#3665F3] bg-[#3665F3]/5 text-[#3665F3] font-medium"
-                          : "border-gray-200 text-gray-600 hover:border-gray-300"
-                      }`}
-                    >
-                      {d.label}
-                    </button>
-                  ))}
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="block">Duration</Label>
+                  <button
+                    type="button"
+                    className="text-xs text-[#3665F3] hover:underline"
+                    onClick={() => updateForm("useCustomDeadline", !form.useCustomDeadline)}
+                  >
+                    {form.useCustomDeadline ? "Use preset duration" : "Set exact date"}
+                  </button>
                 </div>
+
+                {form.useCustomDeadline ? (
+                  <Input
+                    type="datetime-local"
+                    value={form.customDeadline}
+                    onChange={(e) => updateForm("customDeadline", e.target.value)}
+                    min={toLocalInputValue(new Date(Date.now() + MIN_AUCTION_MINUTES * 60_000))}
+                    className="h-10"
+                  />
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {DURATIONS.map((d) => (
+                      <button
+                        key={d.value}
+                        onClick={() => updateForm("duration", d.value)}
+                        className={`rounded-lg border px-3 py-2 text-sm transition-all ${
+                          form.duration === d.value
+                            ? "border-[#3665F3] bg-[#3665F3]/5 text-[#3665F3] font-medium"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        }`}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-between pt-2">
@@ -270,6 +392,12 @@ export default function CreateAuctionPage() {
               <CardDescription>Confirm your auction details.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {form.imageUrl && (
+                <div className="rounded-xl overflow-hidden border max-h-48">
+                  <img src={form.imageUrl} alt={form.title} className="w-full h-48 object-cover" />
+                </div>
+              )}
+
               <div className="rounded-xl border p-4 space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Title</span>
@@ -287,8 +415,8 @@ export default function CreateAuctionPage() {
                 </div>
                 <Separator />
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Duration</span>
-                  <span className="font-medium">{DURATIONS.find((d) => d.value === form.duration)?.label}</span>
+                  <span className="text-gray-500">Ends</span>
+                  <span className="font-medium">{getDeadlineLabel()}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between text-sm">

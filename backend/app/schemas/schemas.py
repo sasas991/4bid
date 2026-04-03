@@ -1,5 +1,5 @@
-from pydantic import BaseModel, ConfigDict
-from datetime import datetime
+from pydantic import BaseModel, ConfigDict, field_validator
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from ..models.models import LotType, AuctionStatus, EscrowStatus
 
@@ -53,7 +53,26 @@ class AuctionBase(BaseModel):
     starting_price: float
     deadline: datetime
 
+    @field_validator("starting_price")
+    @classmethod
+    def validate_starting_price(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("Starting price must be greater than 0")
+        return value
+
+    @field_validator("deadline")
+    @classmethod
+    def validate_deadline(cls, value: datetime) -> datetime:
+        now_utc = datetime.now(timezone.utc)
+        deadline_utc = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if deadline_utc <= now_utc + timedelta(minutes=1):
+            raise ValueError("Deadline must be at least 1 minute in the future")
+        if deadline_utc > now_utc + timedelta(days=30):
+            raise ValueError("Deadline cannot be more than 30 days in the future")
+        return value
+
 class AuctionCreate(AuctionBase):
+    image_url: Optional[str] = None
     hidden_content: Optional[str] = None # Secret link/info for 'information' lot type
 
 class AuctionUpdate(BaseModel):
@@ -67,6 +86,7 @@ class Auction(AuctionBase):
     status: AuctionStatus
     owner_id: int
     winner_id: Optional[int] = None
+    image_url: Optional[str] = None
     created_at: datetime
     # hidden_content is EXCLUDED here to keep it secret
     
@@ -78,8 +98,11 @@ class AuctionDetail(Auction):
 # Finance Schemas
 class WithdrawRequest(BaseModel):
     amount: float
-    # In a real app, we'd verify a signature for the withdrawal too
-    signature: str 
+    signature: str
+
+class DepositRequest(BaseModel):
+    amount: float
+    signature: str
 
 # Auth Schemas
 class NonceResponse(BaseModel):
