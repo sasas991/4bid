@@ -14,8 +14,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
     volumes:
-      - ./backend:/app
+      - ./backend:/app:Z
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/sol_auction
     ports:
@@ -27,8 +28,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
+    user: "${UID:-1000}:${GID:-1000}"
     volumes:
-      - ./frontend:/app
+      - ./frontend:/app:Z
       - /app/node_modules
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
