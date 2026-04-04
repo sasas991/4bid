@@ -4,13 +4,24 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import aiohttp
 import traceback
+import time
 from .api import api_router
 from .core.config import settings
 from .core.database import SessionLocal, engine, Base
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: initialize DB schema and create aiohttp session
+    # Startup: wait for DB to be ready, then initialize DB schema and create aiohttp session
+    max_retries = 30
+    for attempt in range(max_retries):
+        try:
+            conn = engine.connect()
+            conn.close()
+            break
+        except Exception:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(1)
     Base.metadata.create_all(bind=engine)
     async with aiohttp.ClientSession() as session:
         app.state.http_session = session
