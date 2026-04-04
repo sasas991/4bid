@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use solana_program::hash::hashv;
+use solana_sha256_hasher::hashv;
 
 use crate::{
     constants::{BID_COMMIT_SEED, PROTOCOL_SEED},

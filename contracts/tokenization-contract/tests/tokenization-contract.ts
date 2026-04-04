@@ -62,6 +62,22 @@ async function expectErrorContains(
   }
 }
 
+async function waitForAccount(
+  connection: anchor.web3.Connection,
+  pubkey: PublicKey,
+  timeoutMs = 10_000,
+): Promise<void> {
+  const started = Date.now();
+  for (;;) {
+    const info = await connection.getAccountInfo(pubkey, "confirmed");
+    if (info) return;
+    if (Date.now() - started > timeoutMs) {
+      throw new Error(`Account not found after ${timeoutMs}ms: ${pubkey.toBase58()}`);
+    }
+    await sleep(250);
+  }
+}
+
 describe("tokenization-contract", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
   const provider = anchor.getProvider() as anchor.AnchorProvider;
@@ -540,7 +556,7 @@ describe("tokenization-contract", () => {
             treasury: treasury.publicKey,
           })
           .rpc(),
-      "account: winningBidCommit",
+      "account: winning",
     );
 
     const withRevealAsset = await createAssetForCreator(seller, 0);
@@ -681,6 +697,7 @@ describe("tokenization-contract", () => {
     expect(treasuryAfter - treasuryBefore).to.eq(expectedFee.toNumber());
 
     const winnerAta = deriveAta(bidderB.publicKey, mint);
+    await waitForAccount(provider.connection, winnerAta);
     const winnerTokenBal = await provider.connection.getTokenAccountBalance(winnerAta, "confirmed");
     expect(winnerTokenBal.value.amount).to.eq("1");
 
