@@ -110,7 +110,9 @@ export function Navbar() {
                   >
                     <WalletIcon className="h-4 w-4" />
                     <span className="hidden sm:inline font-mono text-xs">
-                      {user.wallet_address.slice(0, 4)}...{user.wallet_address.slice(-3)}
+                      {user.wallet_address
+                        ? `${user.wallet_address.slice(0, 4)}...${user.wallet_address.slice(-3)}`
+                        : user.email ?? user.username ?? "Account"}
                     </span>
                   </Button>
                 </Link>

@@ -19,6 +19,7 @@ services:
       - ./backend:/app:Z
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/sol_auction
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -34,6 +35,7 @@ services:
       - /app/node_modules
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     ports:
       - "3000:3000"
     depends_on:

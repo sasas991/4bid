@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+
     # Solana
     SOLANA_RPC_URL: str = "https://api.devnet.solana.com"
 

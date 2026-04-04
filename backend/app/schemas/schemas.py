@@ -5,7 +5,8 @@ from ..models.models import LotType, AuctionStatus, EscrowStatus
 
 # User Schemas
 class UserBase(BaseModel):
-    wallet_address: str
+    wallet_address: Optional[str] = None
+    email: Optional[str] = None
     username: Optional[str] = None
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
@@ -112,6 +113,9 @@ class LoginRequest(BaseModel):
     wallet_address: str
     signature: str
     nonce: str
+
+class GoogleLoginRequest(BaseModel):
+    token: str
 
 class Token(BaseModel):
     access_token: str
