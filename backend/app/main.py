@@ -6,11 +6,12 @@ import aiohttp
 import traceback
 from .api import api_router
 from .core.config import settings
-from .core.database import SessionLocal, engine
+from .core.database import SessionLocal, engine, Base
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create aiohttp session
+    # Startup: initialize DB schema and create aiohttp session
+    Base.metadata.create_all(bind=engine)
     async with aiohttp.ClientSession() as session:
         app.state.http_session = session
         yield
