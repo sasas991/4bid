@@ -170,6 +170,13 @@ def update_auction_status(db: Session, auction_id: int, status: AuctionStatus, u
         )
         db.add(escrow)
 
+        # For information lots, auto-complete: hidden_content is the product
+        if auction.lot_type == LotType.INFORMATION:
+            db.flush()
+            escrow.status = EscrowStatus.RELEASED
+            auction.owner.balance += escrow.amount
+            status = AuctionStatus.COMPLETED
+
     # 2. Shipping/Delivery Confirmation
     if status == AuctionStatus.SHIPPED:
         if user_id != auction.owner_id:

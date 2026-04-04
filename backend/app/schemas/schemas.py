@@ -53,6 +53,10 @@ class AuctionBase(BaseModel):
     starting_price: float
     deadline: datetime
 
+class AuctionCreate(AuctionBase):
+    image_url: Optional[str] = None
+    hidden_content: Optional[str] = None # Secret link/info for 'information' lot type
+
     @field_validator("starting_price")
     @classmethod
     def validate_starting_price(cls, value: float) -> float:
@@ -70,10 +74,6 @@ class AuctionBase(BaseModel):
         if deadline_utc > now_utc + timedelta(days=30):
             raise ValueError("Deadline cannot be more than 30 days in the future")
         return value
-
-class AuctionCreate(AuctionBase):
-    image_url: Optional[str] = None
-    hidden_content: Optional[str] = None # Secret link/info for 'information' lot type
 
 class AuctionUpdate(BaseModel):
     status: Optional[AuctionStatus] = None

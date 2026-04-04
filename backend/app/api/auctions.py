@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from ..core.database import get_db
 from ..core import security
@@ -26,7 +26,10 @@ def get_my_auctions(
     current_user: User = Depends(security.get_current_user),
     db: Session = Depends(get_db)
 ):
-    return db.query(Auction).filter(Auction.owner_id == current_user.id).all()
+    return db.query(Auction).options(
+        joinedload(Auction.bids),
+        joinedload(Auction.escrow),
+    ).filter(Auction.owner_id == current_user.id).all()
 
 @router.get("/my/bids", response_model=List[schemas.Bid])
 def get_my_bids(

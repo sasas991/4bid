@@ -37,16 +37,39 @@ const LOT_LABEL: Record<string, string> = {
   [LotType.digital_service]: "Digital",
 }
 
-const LIFECYCLE_STEPS: { icon: React.ReactNode; label: string; status: AuctionStatus[] }[] = [
-  { icon: <GavelIcon className="h-4 w-4" />, label: "Bidding", status: [AuctionStatus.active] },
-  { icon: <CheckCircleIcon className="h-4 w-4" />, label: "Winner Selected", status: [AuctionStatus.finished] },
-  { icon: <WalletIcon className="h-4 w-4" />, label: "Payment", status: [AuctionStatus.paid] },
-  { icon: <TruckIcon className="h-4 w-4" />, label: "Shipping", status: [AuctionStatus.shipped] },
-  { icon: <PackageIcon className="h-4 w-4" />, label: "Completed", status: [AuctionStatus.completed] },
-]
+type LifecycleStep = { icon: React.ReactNode; label: string; status: AuctionStatus[] }
 
-function lifecycleIndex(status: AuctionStatus): number {
-  const idx = LIFECYCLE_STEPS.findIndex((s) => s.status.includes(status))
+function getLifecycleSteps(lotType: LotType): LifecycleStep[] {
+  const base: LifecycleStep[] = [
+    { icon: <GavelIcon className="h-4 w-4" />, label: "Bidding", status: [AuctionStatus.active] },
+    { icon: <CheckCircleIcon className="h-4 w-4" />, label: "Winner Selected", status: [AuctionStatus.finished] },
+    { icon: <WalletIcon className="h-4 w-4" />, label: "Payment", status: [AuctionStatus.paid] },
+  ]
+
+  if (lotType === LotType.information) {
+    // Information is revealed immediately after payment — no extra steps
+    base[2] = { ...base[2], label: "Payment & Access", status: [AuctionStatus.paid, AuctionStatus.completed] }
+    return base
+  }
+
+  if (lotType === LotType.physical_service || lotType === LotType.digital_service) {
+    return [
+      ...base,
+      { icon: <CheckCircleIcon className="h-4 w-4" />, label: "Service Provided", status: [AuctionStatus.shipped] },
+      { icon: <PackageIcon className="h-4 w-4" />, label: "Confirmed", status: [AuctionStatus.completed] },
+    ]
+  }
+
+  // physical_item — default with shipping
+  return [
+    ...base,
+    { icon: <TruckIcon className="h-4 w-4" />, label: "Shipping", status: [AuctionStatus.shipped] },
+    { icon: <PackageIcon className="h-4 w-4" />, label: "Completed", status: [AuctionStatus.completed] },
+  ]
+}
+
+function lifecycleIndex(steps: LifecycleStep[], status: AuctionStatus): number {
+  const idx = steps.findIndex((s) => s.status.includes(status))
   return idx === -1 ? 0 : idx
 }
 
@@ -111,8 +134,10 @@ export default function AuctionDetailPage() {
     : null
   const isLeadingBidder = !!(user && highestBid && highestBid.user_id === user.id)
   const isActive = auction.status === AuctionStatus.active
-  const currentStep = lifecycleIndex(auction.status)
-  const lotLabel = LOT_LABEL[auction.lot_type ?? LotType.physical_item]
+  const lotType = auction.lot_type ?? LotType.physical_item
+  const lifecycleSteps = getLifecycleSteps(lotType)
+  const currentStep = lifecycleIndex(lifecycleSteps, auction.status)
+  const lotLabel = LOT_LABEL[lotType]
 
   const handleBid = async () => {
     const amount = parseFloat(bidAmount)
@@ -239,7 +264,7 @@ export default function AuctionDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-1">
-                  {LIFECYCLE_STEPS.map((step, i) => (
+                  {lifecycleSteps.map((step, i) => (
                     <div key={step.label} className="flex flex-1 items-center">
                       <div className={cn("flex flex-col items-center gap-1 flex-1",
                         i <= currentStep ? "text-[#3665F3]" : "text-gray-300"
@@ -251,7 +276,7 @@ export default function AuctionDetailPage() {
                         </div>
                         <span className="text-xs font-medium text-center leading-tight">{step.label}</span>
                       </div>
-                      {i < LIFECYCLE_STEPS.length - 1 && (
+                      {i < lifecycleSteps.length - 1 && (
                         <div className={cn("flex-1 h-0.5 mb-4", i < currentStep ? "bg-[#3665F3]" : "bg-gray-100")} />
                       )}
                     </div>
@@ -349,14 +374,22 @@ export default function AuctionDetailPage() {
                         {finishing ? "Завершаем..." : "Завершить досрочно"}
                       </Button>
                     )}
-                    {auction.status === AuctionStatus.paid && (
+                    {auction.status === AuctionStatus.paid && lotType !== LotType.information && (
                       <Button
                         className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
                         onClick={() => handleStatusUpdate(AuctionStatus.shipped)}
                         disabled={statusUpdating}
                       >
-                        <TruckIcon className="mr-2 h-4 w-4" />
-                        {statusUpdating ? "Отправляем..." : "Подтвердить отправку"}
+                        {lotType === LotType.physical_item ? (
+                          <TruckIcon className="mr-2 h-4 w-4" />
+                        ) : (
+                          <CheckCircleIcon className="mr-2 h-4 w-4" />
+                        )}
+                        {statusUpdating
+                          ? "Подтверждаем..."
+                          : lotType === LotType.physical_item
+                            ? "Подтвердить отправку"
+                            : "Подтвердить оказание услуги"}
                       </Button>
                     )}
                   </div>
@@ -383,11 +416,19 @@ export default function AuctionDetailPage() {
                         disabled={statusUpdating}
                       >
                         <PackageIcon className="mr-2 h-4 w-4" />
-                        {statusUpdating ? "Подтверждаем..." : "Подтвердить получение"}
+                        {statusUpdating
+                          ? "Подтверждаем..."
+                          : lotType === LotType.physical_item
+                            ? "Подтвердить получение"
+                            : "Подтвердить выполнение"}
                       </Button>
                     )}
-                    {auction.status === AuctionStatus.paid && (
-                      <p className="text-center text-sm text-gray-500">Ожидайте отправку от продавца</p>
+                    {auction.status === AuctionStatus.paid && lotType !== LotType.information && (
+                      <p className="text-center text-sm text-gray-500">
+                        {lotType === LotType.physical_item
+                          ? "Ожидайте отправку от продавца"
+                          : "Ожидайте выполнения услуги"}
+                      </p>
                     )}
                   </div>
                 ) : !isActive ? (
