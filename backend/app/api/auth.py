@@ -29,7 +29,7 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
     
     is_valid = auth.verify_solana_signature(request.wallet_address, request.signature, request.nonce)
     
-    if not is_valid and request.signature != "test-sig":
+    if not is_valid:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     access_token = security.create_access_token(data={"sub": user.wallet_address})

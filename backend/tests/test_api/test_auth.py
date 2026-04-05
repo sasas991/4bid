@@ -37,13 +37,8 @@ def test_login_invalid_signature(client, mocker):
         "nonce": nonce
     }
     response = client.post("/api/auth/login", json=login_data)
-    # Our app allows "test-sig" as a fallback in some versions, but if we pass something else it should fail
-    if response.status_code != 400:
-        # Check if it was because of the fallback
-        assert login_data["signature"] == "test-sig"
-    else:
-        assert response.status_code == 400
-        assert "Invalid signature" in response.json()["detail"]
+    assert response.status_code == 400
+    assert "Invalid signature" in response.json()["detail"]
 
 def test_me_endpoint(client, test_user):
     response = client.get("/api/auth/me")

@@ -50,11 +50,7 @@ def get_auction(
     visible_hidden: Optional[str] = auction.hidden_content
     if auction.winner_id != user_id and auction.owner_id != user_id:
         visible_hidden = None
-    elif auction.status not in [
-        AuctionStatus.PAID,
-        AuctionStatus.SHIPPED,
-        AuctionStatus.COMPLETED,
-    ]:
+    elif (auction.chain_status or "") not in ["finalized", "settled"]:
         if auction.owner_id != user_id:
             visible_hidden = None
 
@@ -89,3 +85,18 @@ def update_auction_status(
     if not update.status:
         raise HTTPException(status_code=400, detail="Status must be provided")
     return auction_service.update_auction_status(db, auction_id, update.status, current_user.id, update.tx_signature)
+
+
+@router.post("/{auction_id}/chain/sync", response_model=schemas.Auction)
+def sync_auction_from_chain(
+    auction_id: int,
+    payload: schemas.AuctionChainSync,
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+):
+    return auction_service.sync_auction_from_chain(
+        db=db,
+        auction_id=auction_id,
+        payload=payload,
+        actor_wallet=current_user.wallet_address,
+    )

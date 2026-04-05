@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-from app.models.models import AuctionStatus
 
 
 def _set_client_user(client, user):
@@ -9,83 +8,51 @@ def _set_client_user(client, user):
     client.app.dependency_overrides[get_optional_current_user] = lambda: user
 
 
-def test_full_escrow_lifecycle(client, db, test_user, seller_user, mocker):
-    mocker.patch("app.services.auth.verify_solana_signature", return_value=True)
-    mocker.patch("app.services.auctions.verify_solana_signature", return_value=True)
-    mocker.patch("app.services.auctions.verify_payment", return_value=True)
-
-    # 1. Seller creates auction for 'information'
-    deadline = (datetime.utcnow() + timedelta(days=1)).isoformat()
-    _set_client_user(client, seller_user)
-
-    auction_res = client.post("/api/auctions/", json={
-        "title": "Secret Strategy",
-        "description": "Winning guide",
-        "lot_type": "information",
-        "hidden_content": "https://secret-link.com",
-        "starting_price": 5.0,
-        "deadline": deadline
-    })
-    auction_id = auction_res.json()["id"]
-
-    # 2. Buyer places bid
-    _set_client_user(client, test_user)
-    bid_res = client.post(
-        f"/api/auctions/{auction_id}/bids",
-        json={
-            "amount": 10.0,
-            "signature": "bid-sig",
-            "auction_id": auction_id,
-        },
-    )
-    assert bid_res.status_code == 200
-
-    # 3. Time passes (force finish)
-    # In tests we can call status update or just check detail
-    client.get(f"/api/auctions/{auction_id}") # Triggers finalize if expired (but here not expired)
-    # Manually finish for the sake of the test flow
-    from app.models.models import Auction
-    db_auction = db.query(Auction).filter(Auction.id == auction_id).first()
-    db_auction.status = AuctionStatus.FINISHED
-    db_auction.winner_id = test_user.id
-    db.commit()
-
-    # 4. Buyer pays (status -> PAID, Escrow -> HELD)
-    pay_res = client.patch(f"/api/auctions/{auction_id}/status", json={
-        "status": "paid",
-        "tx_signature": "solana-tx-signature"
-    })
-    assert pay_res.status_code == 200
-    assert pay_res.json()["status"] == "paid"
-
-    # 5. Buyer check detail and SEES hidden content
-    detail_res = client.get(f"/api/auctions/{auction_id}")
-    assert detail_res.json()["hidden_content"] == "https://secret-link.com"
-
-    # 6. Buyer confirms completion (status -> COMPLETED, Escrow -> RELEASED, Seller balance UP)
-    complete_res = client.patch(f"/api/auctions/{auction_id}/status", json={
-        "status": "completed"
-    })
-    assert complete_res.status_code == 200
-    
-    # Check seller balance
-    db.refresh(seller_user)
-    assert seller_user.balance == 10.0
-
-
-def test_get_auction_detail_anonymous_hides_hidden(client, seller_user):
-    """GET without a viewer identity must not leak hidden_content to the DB or JSON."""
-    from app.core.security import get_optional_current_user
-
+def test_critical_write_paths_are_on_chain_only(client, seller_user):
     _set_client_user(client, seller_user)
 
     deadline = (datetime.utcnow() + timedelta(days=1)).isoformat()
     created = client.post(
         "/api/auctions/",
         json={
-            "title": "Secret",
+            "title": "On-chain Auction",
+            "description": "metadata only",
             "lot_type": "information",
-            "hidden_content": "https://secret.example/hidden",
+            "hidden_content": "secret",
+            "starting_price": 5.0,
+            "deadline": deadline,
+        },
+    )
+    assert created.status_code == 200
+    auction_id = created.json()["id"]
+
+    bid_res = client.post(
+        f"/api/auctions/{auction_id}/bids",
+        json={"amount": 6.0, "signature": "irrelevant", "auction_id": auction_id},
+    )
+    assert bid_res.status_code == 410
+
+    cancel_res = client.delete(f"/api/auctions/{auction_id}/bids")
+    assert cancel_res.status_code == 410
+
+    status_res = client.patch(
+        f"/api/auctions/{auction_id}/status",
+        json={"status": "finished", "tx_signature": "sig"},
+    )
+    assert status_res.status_code == 410
+
+
+def test_chain_sync_updates_projection(client, db, test_user, seller_user):
+    from app.models.models import Auction
+
+    _set_client_user(client, seller_user)
+    deadline = (datetime.utcnow() + timedelta(days=1)).isoformat()
+    created = client.post(
+        "/api/auctions/",
+        json={
+            "title": "Sync me",
+            "description": "projection",
+            "lot_type": "physical_item",
             "starting_price": 1.0,
             "deadline": deadline,
         },
@@ -93,7 +60,25 @@ def test_get_auction_detail_anonymous_hides_hidden(client, seller_user):
     assert created.status_code == 200
     auction_id = created.json()["id"]
 
-    client.app.dependency_overrides[get_optional_current_user] = lambda: None
-    detail = client.get(f"/api/auctions/{auction_id}")
-    assert detail.status_code == 200
-    assert detail.json()["hidden_content"] is None
+    payload = {
+        "auction_pubkey": "7v3fY4aJPQjvWm21U6jvV3vfgjmfX8o3Yf6xwSYhQ3jS",
+        "asset_pubkey": "2vPpAtp3LhQhEn8Mo7VNHQz1hYJmVzjM9u6bD1M3YQ4o",
+        "mint_pubkey": "5kHNR5hV1Jx7LhV9Lg3fV8hLGrME6NwEi9e8bJ3fN6r9",
+        "seller_pubkey": seller_user.wallet_address,
+        "winner_pubkey": test_user.wallet_address,
+        "chain_status": "finalized",
+        "current_price_lamports": 2_500_000_000,
+        "finalize_signature": "finalize_sig",
+        "settlement_signature": "settle_sig",
+        "last_synced_slot": 123,
+    }
+
+    sync_res = client.post(f"/api/auctions/{auction_id}/chain/sync", json=payload)
+    assert sync_res.status_code == 200
+
+    db_auction = db.query(Auction).filter(Auction.id == auction_id).first()
+    assert db_auction is not None
+    assert db_auction.auction_pubkey == payload["auction_pubkey"]
+    assert db_auction.chain_status == "finalized"
+    assert db_auction.winner_id == test_user.id
+    assert db_auction.current_price == 2.5

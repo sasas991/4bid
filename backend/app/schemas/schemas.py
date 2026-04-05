@@ -35,6 +35,10 @@ class Bid(BidBase):
     timestamp: datetime
     user_id: int
     signature: str
+    bid_commit_pubkey: Optional[str] = None
+    commit_signature: Optional[str] = None
+    reveal_signature: Optional[str] = None
+    revealed_amount: Optional[float] = None
 
 # Escrow Schemas
 class Escrow(BaseModel):
@@ -43,6 +47,7 @@ class Escrow(BaseModel):
     amount: float
     status: EscrowStatus
     tx_signature: str
+    settlement_signature: Optional[str] = None
     created_at: datetime
 
 # Auction Schemas
@@ -87,6 +92,16 @@ class Auction(AuctionBase):
     owner_id: int
     winner_id: Optional[int] = None
     image_url: Optional[str] = None
+    auction_pubkey: Optional[str] = None
+    asset_pubkey: Optional[str] = None
+    mint_pubkey: Optional[str] = None
+    seller_pubkey: Optional[str] = None
+    winner_pubkey: Optional[str] = None
+    chain_status: Optional[str] = None
+    finalize_signature: Optional[str] = None
+    settlement_signature: Optional[str] = None
+    cancel_signature: Optional[str] = None
+    last_synced_slot: Optional[int] = None
     created_at: datetime
     # hidden_content is EXCLUDED here to keep it secret
     
@@ -116,3 +131,17 @@ class LoginRequest(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+class AuctionChainSync(BaseModel):
+    auction_pubkey: str
+    asset_pubkey: Optional[str] = None
+    mint_pubkey: Optional[str] = None
+    seller_pubkey: str
+    winner_pubkey: Optional[str] = None
+    chain_status: str
+    current_price_lamports: Optional[int] = None
+    finalize_signature: Optional[str] = None
+    settlement_signature: Optional[str] = None
+    cancel_signature: Optional[str] = None
+    last_synced_slot: Optional[int] = None
