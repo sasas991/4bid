@@ -76,11 +76,6 @@ export default function CreateAuctionPage() {
     return new Date(year, month - 1, day, hour, minute, 0, 0)
   }
 
-  const toLocalInputValue = (date: Date): string => {
-    const pad = (n: number) => String(n).padStart(2, "0")
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-  }
-
   if (!user) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
@@ -151,7 +146,42 @@ export default function CreateAuctionPage() {
       return
     }
     setSubmitting(true)
+    let createdAuctionId: number | null = null
     try {
+      const ensureConnectedWallet = async () => {
+        const selected = wallet.wallet
+        const selectedName = selected?.adapter.name?.toLowerCase() ?? ""
+        const selectedReady = selected?.readyState === "Installed"
+
+        if (!selected || !selectedReady || !selectedName.includes("solflare")) {
+          const solflare = wallet.wallets.find(
+            (w) =>
+              w.adapter.name.toLowerCase().includes("solflare") &&
+              w.readyState === "Installed",
+          )
+          if (!solflare) {
+            throw new Error("Solflare extension is not installed or locked")
+          }
+          if (wallet.wallet?.adapter.name !== solflare.adapter.name) {
+            wallet.select(solflare.adapter.name)
+          }
+        }
+
+        if (!wallet.connected) {
+          await wallet.connect()
+        }
+
+        const pubkey = wallet.publicKey ?? wallet.wallet?.adapter.publicKey
+        if (!pubkey) {
+          throw new Error("Connect wallet before creating an on-chain auction")
+        }
+        if (user.wallet_address && user.wallet_address !== pubkey.toBase58()) {
+          throw new Error("Connected wallet does not match your authenticated account")
+        }
+      }
+
+      await ensureConnectedWallet()
+
       const auction = await api.createAuctionApiAuctionsPost({
         title: form.title,
         description: form.description || undefined,
@@ -161,10 +191,7 @@ export default function CreateAuctionPage() {
         hidden_content: form.hiddenContent || undefined,
         image_url: form.imageUrl || undefined,
       })
-
-      if (!wallet.publicKey) {
-        throw new Error("Connect wallet before creating an on-chain auction")
-      }
+      createdAuctionId = auction.id
 
       const chain = await createAuctionOnChain({
         connection,
@@ -189,7 +216,12 @@ export default function CreateAuctionPage() {
 
       router.push(`/auctions/${auction.id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create auction")
+      const base = err instanceof Error ? err.message : "Failed to create auction"
+      if (createdAuctionId) {
+        setError(`${base}. Auction #${createdAuctionId} exists in backend, but on-chain initialization failed.`)
+      } else {
+        setError(base)
+      }
       setSubmitting(false)
     }
   }
@@ -380,7 +412,6 @@ export default function CreateAuctionPage() {
                     type="datetime-local"
                     value={form.customDeadline}
                     onChange={(e) => updateForm("customDeadline", e.target.value)}
-                    min={toLocalInputValue(new Date(Date.now() + MIN_AUCTION_MINUTES * 60_000))}
                     className="h-10"
                   />
                 ) : (
