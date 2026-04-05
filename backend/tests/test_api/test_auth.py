@@ -1,3 +1,5 @@
+import httpx
+
 def test_get_nonce(client):
     wallet_address = "TestWallet1234567890"
     response = client.get(f"/api/auth/nonce/{wallet_address}")
@@ -44,3 +46,13 @@ def test_me_endpoint(client, test_user):
     response = client.get("/api/auth/me")
     assert response.status_code == 200
     assert response.json()["wallet_address"] == test_user.wallet_address
+
+
+def test_google_login_verification_failure(client, mocker):
+    request_error = httpx.RequestError("boom", request=httpx.Request("GET", "https://example.com"))
+    mocker.patch("app.api.auth.verify_google_token", side_effect=request_error)
+
+    response = client.post("/api/auth/google", json={"token": "bad-token"})
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Unable to verify Google token right now"

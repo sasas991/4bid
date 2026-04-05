@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+import httpx
 from sqlalchemy.orm import Session
 
 from ..core import security
@@ -58,6 +59,11 @@ async def google_login(
         google_user = await verify_google_token(request.token)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except httpx.HTTPError:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to verify Google token right now",
+        )
 
     user = db.query(User).filter(
         User.google_id == google_user.google_id
