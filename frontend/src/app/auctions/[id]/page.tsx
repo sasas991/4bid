@@ -508,7 +508,10 @@ export default function AuctionDetailPage() {
                   <div className="space-y-3">
                     <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700 font-medium flex items-center gap-1.5">
                       <CheckCircleIcon className="h-3.5 w-3.5" />
-                      Wallet connected: {user.wallet_address.slice(0, 4)}...{user.wallet_address.slice(-3)}
+                      Wallet connected:
+                      {user.wallet_address
+                        ? ` ${user.wallet_address.slice(0, 4)}...${user.wallet_address.slice(-3)}`
+                        : " linked account"}
                     </div>
                     <div>
                       <Label className="mb-1.5 text-sm">Your Bid (SOL)</Label>

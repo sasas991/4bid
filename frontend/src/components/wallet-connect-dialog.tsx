@@ -30,27 +30,33 @@ export function WalletConnectDialog({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const isWalletReady = (readyState?: string) =>
+    readyState === "Installed" || readyState === "Loadable";
+
   const handleConnect = async () => {
     setError("");
     setLoading(true);
 
     try {
-      // Use already-selected adapter or find one that is actually ready.
-      let adapter = wallet.wallet?.adapter;
-
-      if (!adapter) {
+      // Use selected wallet only if it is ready; otherwise switch to a ready one.
+      let selectedWallet = wallet.wallet;
+      if (!selectedWallet || !isWalletReady(selectedWallet.readyState)) {
         const ready = wallet.wallets.find(
           (w: { readyState?: string }) =>
-            w.readyState === "Installed" || w.readyState === "Loadable",
+            isWalletReady(w.readyState),
         );
         if (!ready) {
           throw new Error(
             "No Solana wallet detected. Please install Phantom or Solflare.",
           );
         }
-        wallet.select(ready.adapter.name);
-        adapter = ready.adapter;
+        if (!selectedWallet || selectedWallet.adapter.name !== ready.adapter.name) {
+          wallet.select(ready.adapter.name);
+        }
+        selectedWallet = ready;
       }
+
+      const adapter = selectedWallet.adapter;
 
       if (!adapter.publicKey) {
         await adapter.connect();
@@ -83,7 +89,16 @@ export function WalletConnectDialog({
       await login(access_token);
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection failed");
+      if (
+        err &&
+        typeof err === "object" &&
+        "name" in err &&
+        (err as { name?: string }).name === "WalletNotReadyError"
+      ) {
+        setError("Wallet is not ready. Open/unlock the wallet extension and try again.");
+      } else {
+        setError(err instanceof Error ? err.message : "Connection failed");
+      }
     } finally {
       setLoading(false);
     }
