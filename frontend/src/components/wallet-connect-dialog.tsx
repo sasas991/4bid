@@ -34,22 +34,47 @@ export function WalletConnectDialog({
     setLoading(true);
 
     try {
-      if (!wallet.connected) {
-        await wallet.connect();
+      let activeWallet = wallet.wallet;
+
+      if (!activeWallet) {
+        const installedWallet = wallet.wallets.find(
+          (candidate: { readyState?: string }) => candidate.readyState === "Installed",
+        );
+        const fallbackWallet = installedWallet ?? wallet.wallets[0];
+
+        if (!fallbackWallet) {
+          throw new Error("No wallet adapter is available");
+        }
+
+        wallet.select(fallbackWallet.adapter.name);
+        activeWallet = fallbackWallet;
       }
 
-      if (!wallet.publicKey) {
+      if (!activeWallet) {
+        throw new Error("Wallet selection failed");
+      }
+
+      if (!activeWallet.adapter.publicKey) {
+        await activeWallet.adapter.connect();
+      }
+
+      const publicKey = activeWallet.adapter.publicKey;
+
+      if (!publicKey) {
         throw new Error("Wallet did not provide a public key");
       }
-      if (!wallet.signMessage) {
+
+      const signMessage = activeWallet.adapter.signMessage;
+
+      if (!signMessage) {
         throw new Error("Connected wallet does not support message signing");
       }
 
-      const walletAddress = wallet.publicKey.toBase58();
+      const walletAddress = publicKey.toBase58();
       const { nonce } = await api.getNonceApiAuthNonceWalletAddressGet(walletAddress);
 
       const messageBytes = new TextEncoder().encode(nonce);
-      const signed = await wallet.signMessage(messageBytes);
+      const signed = await signMessage(messageBytes);
       const signature = bs58.encode(signed);
 
       const { access_token } = await api.loginApiAuthLoginPost({
