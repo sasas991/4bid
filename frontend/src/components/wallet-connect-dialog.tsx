@@ -13,6 +13,7 @@ import { useAuth } from "@/context/auth";
 import { api } from "@/api/client";
 import { AXIOS_INSTANCE } from "@/api/axios-instance";
 import { useWallet } from "@solana/wallet-adapter-react";
+import type { MessageSignerWalletAdapter } from "@solana/wallet-adapter-base";
 import bs58 from "bs58";
 
 interface WalletConnectDialogProps {
@@ -34,47 +35,43 @@ export function WalletConnectDialog({
     setLoading(true);
 
     try {
-      let activeWallet = wallet.wallet;
+      // Use already-selected adapter or find one that is actually ready.
+      let adapter = wallet.wallet?.adapter;
 
-      if (!activeWallet) {
-        const installedWallet = wallet.wallets.find(
-          (candidate: { readyState?: string }) => candidate.readyState === "Installed",
+      if (!adapter) {
+        const ready = wallet.wallets.find(
+          (w: { readyState?: string }) =>
+            w.readyState === "Installed" || w.readyState === "Loadable",
         );
-        const fallbackWallet = installedWallet ?? wallet.wallets[0];
-
-        if (!fallbackWallet) {
-          throw new Error("No wallet adapter is available");
+        if (!ready) {
+          throw new Error(
+            "No Solana wallet detected. Please install Phantom or Solflare.",
+          );
         }
-
-        wallet.select(fallbackWallet.adapter.name);
-        activeWallet = fallbackWallet;
+        wallet.select(ready.adapter.name);
+        adapter = ready.adapter;
       }
 
-      if (!activeWallet) {
-        throw new Error("Wallet selection failed");
+      if (!adapter.publicKey) {
+        await adapter.connect();
       }
 
-      if (!activeWallet.adapter.publicKey) {
-        await activeWallet.adapter.connect();
-      }
-
-      const publicKey = activeWallet.adapter.publicKey ?? wallet.publicKey;
-
+      const publicKey = adapter.publicKey;
       if (!publicKey) {
-        throw new Error("Wallet did not provide a public key");
+        throw new Error("Wallet did not provide a public key after connecting");
       }
 
-      const signMessage = wallet.signMessage;
-
-      if (!signMessage) {
+      // Use the adapter's own signMessage to avoid stale React hook state.
+      if (!("signMessage" in adapter)) {
         throw new Error("Connected wallet does not support message signing");
       }
+      const signer = adapter as unknown as MessageSignerWalletAdapter;
 
       const walletAddress = publicKey.toBase58();
       const { nonce } = await api.getNonceApiAuthNonceWalletAddressGet(walletAddress);
 
       const messageBytes = new TextEncoder().encode(nonce);
-      const signed = await signMessage(messageBytes);
+      const signed = await signer.signMessage(messageBytes);
       const signature = bs58.encode(signed);
 
       const { access_token } = await api.loginApiAuthLoginPost({

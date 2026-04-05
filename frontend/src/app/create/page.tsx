@@ -468,7 +468,10 @@ export default function CreateAuctionPage() {
 
               <div className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-2 text-xs text-[#3665F3]">
                 <CheckCircleIcon className="h-3.5 w-3.5" />
-                Connected as {user.wallet_address.slice(0, 6)}...{user.wallet_address.slice(-4)}
+                Connected as{" "}
+                {user.wallet_address
+                  ? `${user.wallet_address.slice(0, 6)}...${user.wallet_address.slice(-4)}`
+                  : (user.email ?? user.username ?? "Dev User")}
               </div>
 
               <div className="flex justify-between pt-2">
