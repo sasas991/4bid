@@ -58,6 +58,18 @@ class Auction(Base):
     
     owner_id = Column(Integer, ForeignKey("users.id"))
     winner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # On-chain mirror fields (DB is projection, not authority)
+    auction_pubkey = Column(String, unique=True, index=True, nullable=True)
+    asset_pubkey = Column(String, index=True, nullable=True)
+    mint_pubkey = Column(String, index=True, nullable=True)
+    seller_pubkey = Column(String, index=True, nullable=True)
+    winner_pubkey = Column(String, index=True, nullable=True)
+    chain_status = Column(String, index=True, default="pending_create")
+    finalize_signature = Column(String, nullable=True)
+    settlement_signature = Column(String, nullable=True)
+    cancel_signature = Column(String, nullable=True)
+    last_synced_slot = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", foreign_keys=[owner_id], back_populates="auctions")
@@ -72,6 +84,11 @@ class Bid(Base):
     amount = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     signature = Column(String, nullable=False)
+    bid_commit_pubkey = Column(String, index=True, nullable=True)
+    commit_signature = Column(String, nullable=True)
+    reveal_signature = Column(String, nullable=True)
+    revealed_amount = Column(Float, nullable=True)
+    on_chain = Column(Integer, default=0)
     user_id = Column(Integer, ForeignKey("users.id"))
     auction_id = Column(Integer, ForeignKey("auctions.id"))
 
@@ -92,6 +109,7 @@ class Escrow(Base):
     status = Column(Enum(EscrowStatus, values_callable=lambda e: [x.value for x in e]), default=EscrowStatus.HELD)
     
     tx_signature = Column(String, nullable=False) # The payment TX from buyer
+    settlement_signature = Column(String, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

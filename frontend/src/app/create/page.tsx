@@ -13,6 +13,10 @@ import { Separator } from "@/components/ui/separator"
 import { LotType } from "@/api/generated"
 import { api } from "@/api/client"
 import { useAuth } from "@/context/auth"
+import { useConnection, useWallet } from "@solana/wallet-adapter-react"
+import { BN } from "@coral-xyz/anchor"
+import { createAuctionOnChain } from "@/lib/chain/tokenization-client"
+import { AXIOS_INSTANCE } from "@/api/axios-instance"
 
 const MIN_AUCTION_MINUTES = 1
 const MAX_AUCTION_DAYS = 30
@@ -36,6 +40,8 @@ const DURATIONS = [
 export default function CreateAuctionPage() {
   const router = useRouter()
   const { user } = useAuth()
+  const { connection } = useConnection()
+  const wallet = useWallet()
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
@@ -155,6 +161,32 @@ export default function CreateAuctionPage() {
         hidden_content: form.hiddenContent || undefined,
         image_url: form.imageUrl || undefined,
       })
+
+      if (!wallet.publicKey) {
+        throw new Error("Connect wallet before creating an on-chain auction")
+      }
+
+      const chain = await createAuctionOnChain({
+        connection,
+        wallet,
+        title: form.title,
+        metadataUri: form.imageUrl || `ipfs://4bid/${auction.id}`,
+        realWorldRef: `auction:${auction.id}`,
+        minBidLamports: new BN(Math.floor(parseFloat(form.startingPrice) * 1_000_000_000)),
+        commitDurationSec: 120,
+        revealDurationSec: 120,
+      })
+
+      await AXIOS_INSTANCE.post(`/api/auctions/${auction.id}/chain/sync`, {
+        auction_pubkey: chain.auctionPda,
+        asset_pubkey: chain.assetPda,
+        mint_pubkey: chain.mint,
+        seller_pubkey: chain.sellerPubkey,
+        chain_status: chain.chainStatus,
+        current_price_lamports: Math.floor(parseFloat(form.startingPrice) * 1_000_000_000),
+        last_synced_slot: await connection.getSlot("confirmed"),
+      })
+
       router.push(`/auctions/${auction.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create auction")

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+import httpx
 from sqlalchemy.orm import Session
 
 from ..core import security
@@ -35,9 +36,11 @@ def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid wallet or nonce")
 
     is_valid = auth.verify_solana_signature(
-        request.wallet_address, request.signature, request.nonce
+        request.wallet_address,
+        request.signature,
+        request.nonce,
     )
-    if not is_valid and request.signature != "test-sig":
+    if not is_valid:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     access_token = security.create_access_token(data={"sub": str(user.id)})
@@ -56,6 +59,11 @@ async def google_login(
         google_user = await verify_google_token(request.token)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except httpx.HTTPError:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to verify Google token right now",
+        )
 
     user = db.query(User).filter(
         User.google_id == google_user.google_id

@@ -26,9 +26,9 @@ PostgreSQL      Solana Network
 ```
 
 - **Presentation Layer** — Next.js with Solana Wallet Adapter
-- **Application Layer** — FastAPI handling auth, auctions, bids, payments, and order lifecycle
-- **Data Layer** — PostgreSQL storing users, auctions, bids, orders, and delivery status
-- **Blockchain Layer** — Solana for wallet identity, SOL transfers, and signature verification
+- **Application Layer** — FastAPI for auth, metadata, and chain-state indexing/projections
+- **Data Layer** — PostgreSQL storing user data + mirrored on-chain auction projections
+- **Blockchain Layer** — Solana Anchor program as the source of truth for critical auction execution
 
 ## Tech Stack
 
@@ -52,9 +52,9 @@ PostgreSQL      Solana Network
 
 1. **Connect wallet** — No registration, no email, no password. Your wallet is your identity.
 2. **Create or browse auctions** — Filter by lot type, view bid history.
-3. **Place a bid** — Each bid is signed by your wallet's private key. Bids must exceed the current highest.
-4. **Win and pay** — Winner sends SOL directly to the seller; payment is verified via Solana RPC.
-5. **Confirm delivery** — Both parties confirm each stage of the deal lifecycle.
+3. **Place/Reveal bids on-chain** — Commit/reveal and bid validity are enforced by the smart contract.
+4. **Finalize/settle on-chain** — Winner selection, settlement, refunds, and cancellation are executed on-chain.
+5. **Read via backend projections** — Backend indexes chain state for fast UI queries but is not authoritative.
 
 ## Getting Started
 

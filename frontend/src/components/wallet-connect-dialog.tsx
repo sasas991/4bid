@@ -9,11 +9,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/auth";
 import { api } from "@/api/client";
 import { AXIOS_INSTANCE } from "@/api/axios-instance";
+import { useWallet } from "@solana/wallet-adapter-react";
+import bs58 from "bs58";
 
 interface WalletConnectDialogProps {
   open: boolean;
@@ -24,32 +24,67 @@ export function WalletConnectDialog({
   open,
   onOpenChange,
 }: WalletConnectDialogProps) {
-  const { login } = useAuth();
-  const [wallet, setWallet] = useState("");
+  const { login, logout } = useAuth();
+  const wallet = useWallet();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleConnect = async () => {
-    if (!wallet.trim()) return;
     setError("");
     setLoading(true);
 
     try {
-      const { nonce } = await api.getNonceApiAuthNonceWalletAddressGet(
-        wallet.trim(),
-      );
+      let activeWallet = wallet.wallet;
 
-      const signature = "test-sig";
+      if (!activeWallet) {
+        const installedWallet = wallet.wallets.find(
+          (candidate: { readyState?: string }) => candidate.readyState === "Installed",
+        );
+        const fallbackWallet = installedWallet ?? wallet.wallets[0];
+
+        if (!fallbackWallet) {
+          throw new Error("No wallet adapter is available");
+        }
+
+        wallet.select(fallbackWallet.adapter.name);
+        activeWallet = fallbackWallet;
+      }
+
+      if (!activeWallet) {
+        throw new Error("Wallet selection failed");
+      }
+
+      if (!activeWallet.adapter.publicKey) {
+        await activeWallet.adapter.connect();
+      }
+
+      const publicKey = activeWallet.adapter.publicKey ?? wallet.publicKey;
+
+      if (!publicKey) {
+        throw new Error("Wallet did not provide a public key");
+      }
+
+      const signMessage = wallet.signMessage;
+
+      if (!signMessage) {
+        throw new Error("Connected wallet does not support message signing");
+      }
+
+      const walletAddress = publicKey.toBase58();
+      const { nonce } = await api.getNonceApiAuthNonceWalletAddressGet(walletAddress);
+
+      const messageBytes = new TextEncoder().encode(nonce);
+      const signed = await signMessage(messageBytes);
+      const signature = bs58.encode(signed);
 
       const { access_token } = await api.loginApiAuthLoginPost({
-        wallet_address: wallet.trim(),
+        wallet_address: walletAddress,
         signature,
         nonce,
       });
 
       await login(access_token);
       onOpenChange(false);
-      setWallet("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connection failed");
     } finally {
@@ -81,6 +116,16 @@ export function WalletConnectDialog({
     }
   };
 
+  const handleDisconnect = async () => {
+    setError("");
+    try {
+      await wallet.disconnect();
+    } finally {
+      logout();
+      onOpenChange(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -88,7 +133,6 @@ export function WalletConnectDialog({
           <DialogTitle>Sign In</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          {/* Google Sign-In */}
           <div className="flex justify-center">
             <GoogleLogin
               onSuccess={handleGoogleSuccess}
@@ -100,7 +144,6 @@ export function WalletConnectDialog({
             />
           </div>
 
-          {/* Divider */}
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
@@ -112,25 +155,23 @@ export function WalletConnectDialog({
             </div>
           </div>
 
-          {/* Wallet Connect */}
-          <div className="space-y-2">
-            <Label htmlFor="wallet">Wallet Address</Label>
-            <Input
-              id="wallet"
-              placeholder="Enter Solana wallet address"
-              value={wallet}
-              onChange={(e) => setWallet(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleConnect()}
-            />
-          </div>
+          <p className="text-sm text-gray-600">
+            Critical auction actions are signed and executed on-chain.
+          </p>
+          {wallet.publicKey && (
+            <p className="text-xs text-gray-500 font-mono">{wallet.publicKey.toBase58()}</p>
+          )}
+
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button
-            className="w-full"
-            onClick={handleConnect}
-            disabled={loading || !wallet.trim()}
-          >
-            {loading ? "Connecting..." : "Connect Wallet"}
-          </Button>
+          {!wallet.connected ? (
+            <Button className="w-full" onClick={handleConnect} disabled={loading}>
+              {loading ? "Connecting..." : "Connect & Sign"}
+            </Button>
+          ) : (
+            <Button className="w-full" variant="outline" onClick={handleDisconnect}>
+              Disconnect
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>

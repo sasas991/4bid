@@ -49,47 +49,11 @@ export default function ProfilePage() {
   };
 
   const handleWithdraw = async () => {
-    const amount = parseFloat(withdrawAmount);
-    if (!amount || amount <= 0 || amount > user.balance) {
-      setError("Invalid withdraw amount");
-      return;
-    }
-    setError("");
-    setWithdrawing(true);
-    try {
-      await api.withdrawFundsApiUsersWithdrawPost({
-        amount,
-        signature: "test-sig",
-      });
-      await refreshUser();
-      setWithdrawAmount("");
-    } catch {
-      setError("Withdrawal failed");
-    } finally {
-      setWithdrawing(false);
-    }
+    setError("Withdraw via mocked signatures is disabled. Use wallet-signed on-chain transfer flow.");
   };
 
   const handleDeposit = async () => {
-    const amount = parseFloat(depositAmount);
-    if (!amount || amount <= 0) {
-      setError("Invalid deposit amount");
-      return;
-    }
-    setError("");
-    setDepositing(true);
-    try {
-      await api.depositFundsApiUsersDepositPost({
-        amount,
-        signature: "test-sig",
-      });
-      await refreshUser();
-      setDepositAmount("");
-    } catch {
-      setError("Deposit failed");
-    } finally {
-      setDepositing(false);
-    }
+    setError("Deposit via mocked signatures is disabled. Use wallet-signed on-chain transfer flow.");
   };
 
   return (

@@ -62,6 +62,22 @@ async function expectErrorContains(
   }
 }
 
+async function waitForAccount(
+  connection: anchor.web3.Connection,
+  pubkey: PublicKey,
+  timeoutMs = 10_000,
+): Promise<void> {
+  const started = Date.now();
+  for (;;) {
+    const info = await connection.getAccountInfo(pubkey, "confirmed");
+    if (info) return;
+    if (Date.now() - started > timeoutMs) {
+      throw new Error(`Account not found after ${timeoutMs}ms: ${pubkey.toBase58()}`);
+    }
+    await sleep(250);
+  }
+}
+
 describe("tokenization-contract", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
   const provider = anchor.getProvider() as anchor.AnchorProvider;
@@ -359,7 +375,7 @@ describe("tokenization-contract", () => {
           mint,
           new anchor.BN(1_000_000),
         ),
-      "UnauthorizedSeller",
+      "account: seller",
     );
 
     await expectErrorContains(
@@ -510,22 +526,70 @@ describe("tokenization-contract", () => {
   });
 
   it("finalize_auction: rejects early finalize and no-reveal finalize", async () => {
-    const { assetPda, mint } = await createAssetForCreator(seller, 0);
-    const a = await createAuctionForAsset(
+    const noRevealAsset = await createAssetForCreator(seller, 0);
+    const noRevealAuction = await createAuctionForAsset(
       seller,
-      assetPda,
-      mint,
+      noRevealAsset.assetPda,
+      noRevealAsset.mint,
       new anchor.BN(1_000_000),
       { startDelaySec: 2, commitDurationSec: 60, revealDurationSec: 60 },
     );
 
-    await waitUntilTs(a.startTs + 1);
-    await commitBid(a.auctionPda, bidderA, new anchor.BN(2_000_000), randomBytes(32));
+    await waitUntilTs(noRevealAuction.startTs + 1);
+    await commitBid(noRevealAuction.auctionPda, bidderA, new anchor.BN(2_000_000), randomBytes(32));
 
     const [winnerBidCommitPda] = PublicKey.findProgramAddressSync(
-      [BID_COMMIT_SEED, a.auctionPda.toBuffer(), bidderA.publicKey.toBuffer()],
+      [BID_COMMIT_SEED, noRevealAuction.auctionPda.toBuffer(), bidderA.publicKey.toBuffer()],
       program.programId,
     );
+
+    await waitUntilTs(noRevealAuction.revealEndTs + 1);
+    await expectErrorContains(
+      () =>
+        program.methods
+          .finalizeAuctionState()
+          .accounts({
+            protocol: protocolPda,
+            auction: noRevealAuction.auctionPda,
+            winningBidCommit: winnerBidCommitPda,
+            seller: seller.publicKey,
+            treasury: treasury.publicKey,
+          })
+          .rpc(),
+      "account: winning",
+    );
+
+    const withRevealAsset = await createAssetForCreator(seller, 0);
+    const withRevealAuction = await createAuctionForAsset(
+      seller,
+      withRevealAsset.assetPda,
+      withRevealAsset.mint,
+      new anchor.BN(1_000_000),
+      { startDelaySec: 2, commitDurationSec: 60, revealDurationSec: 60 },
+    );
+
+    await waitUntilTs(withRevealAuction.startTs + 1);
+    const committedAmount = new anchor.BN(2_000_000);
+    const commit = await commitBid(withRevealAuction.auctionPda, bidderA, committedAmount, randomBytes(32));
+    const [revealedWinnerBidCommitPda] = PublicKey.findProgramAddressSync(
+      [BID_COMMIT_SEED, withRevealAuction.auctionPda.toBuffer(), bidderA.publicKey.toBuffer()],
+      program.programId,
+    );
+
+    await waitUntilTs(withRevealAuction.commitEndTs + 1);
+    await program.methods
+      .revealBid({
+        amountLamports: committedAmount,
+        salt: Array.from(commit.salt),
+      })
+      .accounts({
+        protocol: protocolPda,
+        auction: withRevealAuction.auctionPda,
+        bidder: bidderA.publicKey,
+        bidCommit: commit.bidCommitPda,
+      })
+      .signers([bidderA])
+      .rpc();
 
     await expectErrorContains(
       () =>
@@ -533,30 +597,13 @@ describe("tokenization-contract", () => {
           .finalizeAuctionState()
           .accounts({
             protocol: protocolPda,
-            auction: a.auctionPda,
-            winningBidCommit: winnerBidCommitPda,
+            auction: withRevealAuction.auctionPda,
+            winningBidCommit: revealedWinnerBidCommitPda,
             seller: seller.publicKey,
             treasury: treasury.publicKey,
           })
           .rpc(),
       "NotFinalizableYet",
-    );
-
-    await waitUntilTs(a.revealEndTs + 1);
-
-    await expectErrorContains(
-      () =>
-        program.methods
-          .finalizeAuctionState()
-          .accounts({
-            protocol: protocolPda,
-            auction: a.auctionPda,
-            winningBidCommit: winnerBidCommitPda,
-            seller: seller.publicKey,
-            treasury: treasury.publicKey,
-          })
-          .rpc(),
-      "NoRevealedBids",
     );
   });
 
@@ -573,8 +620,8 @@ describe("tokenization-contract", () => {
     await waitUntilTs(a.startTs + 1);
 
     const amountA = new anchor.BN(2 * LAMPORTS_PER_SOL);
-    const amountBCommitted = new anchor.BN(3 * LAMPORTS_PER_SOL);
-    const amountBRevealed = new anchor.BN(Math.floor(2.5 * LAMPORTS_PER_SOL));
+    const amountBCommitted = new anchor.BN(Math.floor(2.5 * LAMPORTS_PER_SOL));
+    const amountBRevealed = amountBCommitted;
 
     const commitA = await commitBid(a.auctionPda, bidderA, amountA, randomBytes(32));
     const commitB = await commitBid(a.auctionPda, bidderB, amountBCommitted, randomBytes(32));
@@ -650,6 +697,7 @@ describe("tokenization-contract", () => {
     expect(treasuryAfter - treasuryBefore).to.eq(expectedFee.toNumber());
 
     const winnerAta = deriveAta(bidderB.publicKey, mint);
+    await waitForAccount(provider.connection, winnerAta);
     const winnerTokenBal = await provider.connection.getTokenAccountBalance(winnerAta, "confirmed");
     expect(winnerTokenBal.value.amount).to.eq("1");
 

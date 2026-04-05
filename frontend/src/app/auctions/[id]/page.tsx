@@ -29,6 +29,14 @@ import { api } from "@/api/client"
 import { useAuth } from "@/context/auth"
 import { cn } from "@/lib/utils"
 import { formatDateTimeRu, formatTimeLeftRu } from "@/lib/date"
+import { AXIOS_INSTANCE } from "@/api/axios-instance"
+import { BN } from "@coral-xyz/anchor"
+import { useConnection, useWallet } from "@solana/wallet-adapter-react"
+import {
+  cancelAuctionOnChain,
+  commitBidOnChain,
+  finalizeAuctionOnChain,
+} from "@/lib/chain/tokenization-client"
 
 const LOT_LABEL: Record<string, string> = {
   [LotType.physical_item]: "Physical",
@@ -77,6 +85,8 @@ export default function AuctionDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { user } = useAuth()
+  const { connection } = useConnection()
+  const wallet = useWallet()
   const [auction, setAuction] = useState<AuctionDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [bidAmount, setBidAmount] = useState("")
@@ -148,11 +158,33 @@ export default function AuctionDetailPage() {
     setError("")
     setBidding(true)
     try {
-      await api.createBidApiAuctionsAuctionIdBidsPost(auctionId, {
-        amount,
-        auction_id: auctionId,
-        signature: "test-sig",
+      const chainAuction = auction as any
+      if (!chainAuction.auction_pubkey) {
+        throw new Error("Auction is not synced on-chain yet")
+      }
+
+      const amountLamports = new BN(Math.floor(amount * 1_000_000_000))
+      const committed = await commitBidOnChain({
+        connection,
+        wallet,
+        auctionPubkey: chainAuction.auction_pubkey,
+        amountLamports,
       })
+
+      localStorage.setItem(
+        `bid_salt:${chainAuction.auction_pubkey}:${wallet.publicKey?.toBase58() || "unknown"}`,
+        committed.saltHex,
+      )
+
+      await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/chain/sync`, {
+        auction_pubkey: chainAuction.auction_pubkey,
+        seller_pubkey: chainAuction.seller_pubkey || user?.wallet_address,
+        winner_pubkey: chainAuction.winner_pubkey,
+        chain_status: "commit_phase",
+        current_price_lamports: amountLamports.toNumber(),
+        last_synced_slot: await connection.getSlot("confirmed"),
+      })
+
       const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
       setAuction(updated)
       setBidAmount("")
@@ -169,10 +201,35 @@ export default function AuctionDetailPage() {
     setError("")
     setFinishing(true)
     try {
-      const updated = await api.updateAuctionStatusApiAuctionsAuctionIdStatusPatch(auctionId, {
-        status: AuctionStatus.finished,
+      const chainAuction = auction as any
+      const treasury = process.env.NEXT_PUBLIC_PROTOCOL_TREASURY
+      if (!chainAuction.auction_pubkey || !chainAuction.seller_pubkey || !chainAuction.winner_pubkey) {
+        throw new Error("Auction chain data missing for finalize")
+      }
+      if (!treasury) {
+        throw new Error("NEXT_PUBLIC_PROTOCOL_TREASURY is not configured")
+      }
+
+      const finalized = await finalizeAuctionOnChain({
+        connection,
+        wallet,
+        auctionPubkey: chainAuction.auction_pubkey,
+        sellerPubkey: chainAuction.seller_pubkey,
+        treasuryPubkey: treasury,
+        winnerPubkey: chainAuction.winner_pubkey,
       })
-      setAuction((prev) => (prev ? { ...prev, ...updated } : prev))
+
+      await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/chain/sync`, {
+        auction_pubkey: chainAuction.auction_pubkey,
+        seller_pubkey: chainAuction.seller_pubkey,
+        winner_pubkey: chainAuction.winner_pubkey,
+        chain_status: "finalized",
+        finalize_signature: finalized.signature,
+        last_synced_slot: await connection.getSlot("confirmed"),
+      })
+
+      const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
+      setAuction(updated)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось завершить аукцион")
     } finally {
@@ -184,7 +241,29 @@ export default function AuctionDetailPage() {
     setError("")
     setCancelling(true)
     try {
-      await api.cancelBidApiAuctionsAuctionIdBidsDelete(auctionId)
+      const chainAuction = auction as any
+      if (!chainAuction.auction_pubkey || !chainAuction.asset_pubkey || !chainAuction.mint_pubkey || !chainAuction.seller_pubkey) {
+        throw new Error("Auction chain data missing for cancel")
+      }
+
+      const canceled = await cancelAuctionOnChain({
+        connection,
+        wallet,
+        auctionPubkey: chainAuction.auction_pubkey,
+        assetPubkey: chainAuction.asset_pubkey,
+        mintPubkey: chainAuction.mint_pubkey,
+        sellerPubkey: chainAuction.seller_pubkey,
+      })
+
+      await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/chain/sync`, {
+        auction_pubkey: chainAuction.auction_pubkey,
+        seller_pubkey: chainAuction.seller_pubkey,
+        winner_pubkey: chainAuction.winner_pubkey,
+        chain_status: "cancelled",
+        cancel_signature: canceled.signature,
+        last_synced_slot: await connection.getSlot("confirmed"),
+      })
+
       const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
       setAuction(updated)
     } catch (err) {
@@ -195,19 +274,9 @@ export default function AuctionDetailPage() {
   }
 
   const handleStatusUpdate = async (status: AuctionStatus, txSig?: string) => {
-    setError("")
     setStatusUpdating(true)
-    try {
-      const updated = await api.updateAuctionStatusApiAuctionsAuctionIdStatusPatch(auctionId, {
-        status,
-        tx_signature: txSig ?? null,
-      })
-      setAuction((prev) => (prev ? { ...prev, ...updated } : prev))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось обновить статус")
-    } finally {
-      setStatusUpdating(false)
-    }
+    setError("Legacy backend status transitions are disabled. Use on-chain actions (commit/reveal/finalize/settle/refund/cancel).")
+    setStatusUpdating(false)
   }
 
   return (
@@ -402,7 +471,7 @@ export default function AuctionDetailPage() {
                     {auction.status === AuctionStatus.finished && (
                       <Button
                         className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
-                        onClick={() => handleStatusUpdate(AuctionStatus.paid, "test-sig")}
+                        onClick={() => handleStatusUpdate(AuctionStatus.paid)}
                         disabled={statusUpdating}
                       >
                         <WalletIcon className="mr-2 h-4 w-4" />
