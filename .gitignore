@@ -28,6 +28,10 @@ yarn-error.log*
 !**/.env.example
 !**/.env*.example
 
+# Do not track project env examples with local secrets
+/backend/.env.example
+/frontend/.env.example
+
 # Python
 __pycache__/
 *.py[cod]
