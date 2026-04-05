@@ -17,6 +17,21 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# Project env files (secrets)
+/.env
+/backend/.env
+/backend/.env.example
+/frontend/.env
+/frontend/.env.local
+
+# Keep templates in VCS
+!**/.env.example
+!**/.env*.example
+
+# Do not track project env examples with local secrets
+/backend/.env.example
+/frontend/.env.example
+
 # Python
 __pycache__/
 *.py[cod]

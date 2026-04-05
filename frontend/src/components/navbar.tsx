@@ -3,12 +3,15 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { SearchIcon, WalletIcon, PlusCircleIcon, ZapIcon, LogOutIcon } from "lucide-react"
+import { SearchIcon, WalletIcon, PlusCircleIcon, ZapIcon, LogOutIcon, FlaskConicalIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/context/auth"
 import { WalletConnectDialog } from "@/components/wallet-connect-dialog"
+import { AXIOS_INSTANCE } from "@/api/axios-instance"
+
+const DEV_AUTH_BYPASS = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true"
 
 const NAV_LINKS = [
   { href: "/auctions", label: "Browse" },
@@ -17,9 +20,14 @@ const NAV_LINKS = [
 
 export function Navbar() {
   const pathname = usePathname()
-  const { user, isLoading, logout } = useAuth()
+  const { user, isLoading, logout, login } = useAuth()
   const [connectOpen, setConnectOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
+
+  const handleDevLogin = React.useCallback(async () => {
+    const res = await AXIOS_INSTANCE.post<{ access_token: string }>("/api/auth/dev-login")
+    await login(res.data.access_token)
+  }, [login])
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-white shadow-sm">
@@ -129,14 +137,28 @@ export function Navbar() {
                 </Button>
               </>
             ) : (
-              <Button
-                size="sm"
-                className="h-9 gap-1.5 bg-[#3665F3] text-white hover:bg-[#2952d4]"
-                onClick={() => setConnectOpen(true)}
-              >
-                <WalletIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">Connect Wallet</span>
-              </Button>
+              <>
+                {DEV_AUTH_BYPASS && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9 gap-1.5 border-amber-400 text-amber-600 hover:bg-amber-50"
+                    onClick={handleDevLogin}
+                    title="Dev login (DEV_AUTH_BYPASS)"
+                  >
+                    <FlaskConicalIcon className="h-4 w-4" />
+                    <span className="hidden sm:inline">Dev Login</span>
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  className="h-9 gap-1.5 bg-[#3665F3] text-white hover:bg-[#2952d4]"
+                  onClick={() => setConnectOpen(true)}
+                >
+                  <WalletIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline">Connect Wallet</span>
+                </Button>
+              </>
             )}
           </div>
         </div>

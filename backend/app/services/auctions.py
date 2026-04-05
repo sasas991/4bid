@@ -103,7 +103,7 @@ def sync_auction_from_chain(
     db: Session,
     auction_id: int,
     payload: schemas.AuctionChainSync,
-    actor_wallet: str,
+    actor_wallet: Optional[str],
 ):
     auction = db.query(Auction).filter(Auction.id == auction_id).first()
     if not auction:
@@ -118,3 +118,5 @@ def sync_auction_from_chain(
         return apply_chain_projection(db, auction, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Chain RPC error: {exc}") from exc

@@ -24,4 +24,9 @@ class Settings(BaseSettings):
     # Solana
     SOLANA_RPC_URL: str = "https://api.devnet.solana.com"
 
+    # Dev / local bypass — NEVER set to true in production
+    DEV_AUTH_BYPASS: bool = False
+    # Base58-encoded keypair for local dev signing (optional, dev-only)
+    DEV_SIGNER_KEYPAIR: str = ""
+
 settings = Settings()

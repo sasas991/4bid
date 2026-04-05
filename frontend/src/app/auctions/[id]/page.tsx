@@ -46,6 +46,13 @@ const LOT_LABEL: Record<string, string> = {
 }
 
 type LifecycleStep = { icon: React.ReactNode; label: string; status: AuctionStatus[] }
+type ChainAuctionFields = {
+  auction_pubkey?: string
+  seller_pubkey?: string
+  winner_pubkey?: string
+  asset_pubkey?: string
+  mint_pubkey?: string
+}
 
 function getLifecycleSteps(lotType: LotType): LifecycleStep[] {
   const base: LifecycleStep[] = [
@@ -158,7 +165,7 @@ export default function AuctionDetailPage() {
     setError("")
     setBidding(true)
     try {
-      const chainAuction = auction as any
+      const chainAuction = auction as AuctionDetail & ChainAuctionFields
       if (!chainAuction.auction_pubkey) {
         throw new Error("Auction is not synced on-chain yet")
       }
@@ -201,7 +208,7 @@ export default function AuctionDetailPage() {
     setError("")
     setFinishing(true)
     try {
-      const chainAuction = auction as any
+      const chainAuction = auction as AuctionDetail & ChainAuctionFields
       const treasury = process.env.NEXT_PUBLIC_PROTOCOL_TREASURY
       if (!chainAuction.auction_pubkey || !chainAuction.seller_pubkey || !chainAuction.winner_pubkey) {
         throw new Error("Auction chain data missing for finalize")
@@ -241,7 +248,7 @@ export default function AuctionDetailPage() {
     setError("")
     setCancelling(true)
     try {
-      const chainAuction = auction as any
+      const chainAuction = auction as AuctionDetail & ChainAuctionFields
       if (!chainAuction.auction_pubkey || !chainAuction.asset_pubkey || !chainAuction.mint_pubkey || !chainAuction.seller_pubkey) {
         throw new Error("Auction chain data missing for cancel")
       }
@@ -273,7 +280,7 @@ export default function AuctionDetailPage() {
     }
   }
 
-  const handleStatusUpdate = async (status: AuctionStatus, txSig?: string) => {
+  const handleStatusUpdate = async () => {
     setStatusUpdating(true)
     setError("Legacy backend status transitions are disabled. Use on-chain actions (commit/reveal/finalize/settle/refund/cancel).")
     setStatusUpdating(false)
@@ -446,7 +453,7 @@ export default function AuctionDetailPage() {
                     {auction.status === AuctionStatus.paid && lotType !== LotType.information && (
                       <Button
                         className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
-                        onClick={() => handleStatusUpdate(AuctionStatus.shipped)}
+                        onClick={handleStatusUpdate}
                         disabled={statusUpdating}
                       >
                         {lotType === LotType.physical_item ? (
@@ -471,7 +478,7 @@ export default function AuctionDetailPage() {
                     {auction.status === AuctionStatus.finished && (
                       <Button
                         className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
-                        onClick={() => handleStatusUpdate(AuctionStatus.paid)}
+                        onClick={handleStatusUpdate}
                         disabled={statusUpdating}
                       >
                         <WalletIcon className="mr-2 h-4 w-4" />
@@ -481,7 +488,7 @@ export default function AuctionDetailPage() {
                     {auction.status === AuctionStatus.shipped && (
                       <Button
                         className="w-full bg-green-600 hover:bg-green-700"
-                        onClick={() => handleStatusUpdate(AuctionStatus.completed)}
+                        onClick={handleStatusUpdate}
                         disabled={statusUpdating}
                       >
                         <PackageIcon className="mr-2 h-4 w-4" />
@@ -508,7 +515,10 @@ export default function AuctionDetailPage() {
                   <div className="space-y-3">
                     <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700 font-medium flex items-center gap-1.5">
                       <CheckCircleIcon className="h-3.5 w-3.5" />
-                      Wallet connected: {user.wallet_address.slice(0, 4)}...{user.wallet_address.slice(-3)}
+                      Wallet connected:
+                      {user.wallet_address
+                        ? ` ${user.wallet_address.slice(0, 4)}...${user.wallet_address.slice(-3)}`
+                        : " linked account"}
                     </div>
                     <div>
                       <Label className="mb-1.5 text-sm">Your Bid (SOL)</Label>

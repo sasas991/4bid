@@ -42,13 +42,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (token) {
-      setState((prev) => ({ ...prev, token }));
-      fetchUser();
-    } else {
-      setState((prev) => ({ ...prev, isLoading: false }));
-    }
+    void Promise.resolve().then(async () => {
+      const token = localStorage.getItem("access_token");
+      if (!token) {
+        setState({ user: null, token: null, isLoading: false });
+        return;
+      }
+
+      setState((prev) => ({ ...prev, token, isLoading: true }));
+      await fetchUser();
+    });
   }, [fetchUser]);
 
   const login = useCallback(

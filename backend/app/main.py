@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import aiohttp
 import traceback
 import time
+import subprocess
 from .api import api_router
 from .core.config import settings
 from .core.database import SessionLocal, engine, Base
@@ -23,6 +24,15 @@ async def lifespan(app: FastAPI):
                 raise
             time.sleep(1)
     Base.metadata.create_all(bind=engine)
+    # Apply any pending Alembic migrations via the CLI (avoids the local
+    # alembic/ directory shadowing the installed alembic package on import).
+    result = subprocess.run(
+        ["alembic", "upgrade", "head"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Alembic migration failed:\n{result.stderr}")
     async with aiohttp.ClientSession() as session:
         app.state.http_session = session
         yield

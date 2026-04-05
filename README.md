@@ -34,7 +34,7 @@ PostgreSQL      Solana Network
 
 **Frontend**
 - Next.js (App Router) + TypeScript
-- `@solana/wallet-adapter` (Phantom / Solflare)
+- `@solana/wallet-adapter` (Solflare)
 - TanStack Query
 - Tailwind CSS
 

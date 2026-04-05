@@ -13,6 +13,7 @@ import { useAuth } from "@/context/auth";
 import { api } from "@/api/client";
 import { AXIOS_INSTANCE } from "@/api/axios-instance";
 import { useWallet } from "@solana/wallet-adapter-react";
+import type { MessageSignerWalletAdapter } from "@solana/wallet-adapter-base";
 import bs58 from "bs58";
 
 interface WalletConnectDialogProps {
@@ -29,42 +30,65 @@ export function WalletConnectDialog({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const isWalletReady = (readyState?: string) =>
+    readyState === "Installed";
+
+  const isSolflareWallet = (name?: string) =>
+    typeof name === "string" && name.toLowerCase().includes("solflare");
+
+  const supportsSignMessage = (
+    adapter: unknown,
+  ): adapter is MessageSignerWalletAdapter =>
+    !!adapter &&
+    typeof adapter === "object" &&
+    "signMessage" in adapter &&
+    typeof (adapter as { signMessage?: unknown }).signMessage === "function";
+
   const handleConnect = async () => {
     setError("");
     setLoading(true);
 
     try {
-      let activeWallet = wallet.wallet;
-
-      if (!activeWallet) {
-        const installedWallet = wallet.wallets.find(
-          (candidate: { readyState?: string }) => candidate.readyState === "Installed",
+      // Ensure the active wallet is Solflare and ready before connecting.
+      let selectedWallet = wallet.wallet;
+      if (
+        !selectedWallet ||
+        !isSolflareWallet(selectedWallet.adapter.name) ||
+        !isWalletReady(selectedWallet.readyState)
+      ) {
+        const solflare = wallet.wallets.find(
+          (w) =>
+            isSolflareWallet(w.adapter.name) &&
+            isWalletReady(w.readyState),
         );
-        const fallbackWallet = installedWallet ?? wallet.wallets[0];
 
-        if (!fallbackWallet) {
-          throw new Error("No wallet adapter is available");
+        if (!solflare) {
+          throw new Error("No Solflare wallet detected. Please install/unlock Solflare extension.");
         }
 
-        wallet.select(fallbackWallet.adapter.name);
-        activeWallet = fallbackWallet;
+        if (!selectedWallet || selectedWallet.adapter.name !== solflare.adapter.name) {
+          wallet.select(solflare.adapter.name);
+        }
+
+        selectedWallet = solflare;
       }
 
-      if (!activeWallet) {
-        throw new Error("Wallet selection failed");
+      if (!wallet.connected) {
+        await wallet.connect();
       }
 
-      if (!activeWallet.adapter.publicKey) {
-        await activeWallet.adapter.connect();
-      }
-
-      const publicKey = activeWallet.adapter.publicKey ?? wallet.publicKey;
+      const adapter = wallet.wallet?.adapter ?? selectedWallet.adapter;
+      const publicKey = wallet.publicKey ?? adapter.publicKey;
 
       if (!publicKey) {
-        throw new Error("Wallet did not provide a public key");
+        throw new Error("Wallet did not provide a public key after connecting");
       }
 
-      const signMessage = wallet.signMessage;
+      const signMessage = wallet.signMessage
+        ? wallet.signMessage.bind(wallet)
+        : supportsSignMessage(adapter)
+          ? adapter.signMessage.bind(adapter)
+          : null;
 
       if (!signMessage) {
         throw new Error("Connected wallet does not support message signing");
@@ -86,7 +110,23 @@ export function WalletConnectDialog({
       await login(access_token);
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection failed");
+      if (
+        err &&
+        typeof err === "object" &&
+        "name" in err &&
+        (err as { name?: string }).name === "WalletNotReadyError"
+      ) {
+        setError("Wallet is not ready. Open/unlock the wallet extension and try again.");
+      } else if (
+        err &&
+        typeof err === "object" &&
+        "name" in err &&
+        (err as { name?: string }).name === "WalletConnectionError"
+      ) {
+        setError("Failed to connect wallet. Open Solflare and approve the connection request.");
+      } else {
+        setError(err instanceof Error ? err.message : "Connection failed");
+      }
     } finally {
       setLoading(false);
     }
