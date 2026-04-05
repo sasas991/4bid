@@ -15,14 +15,18 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("users", sa.Column("email", sa.String(), nullable=True))
-    op.add_column("users", sa.Column("google_id", sa.String(), nullable=True))
-    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
-    op.create_index(
-        op.f("ix_users_google_id"), "users", ["google_id"], unique=True
+    # IF NOT EXISTS makes this safe to run on a DB already created by create_all.
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR")
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email)"
     )
-    op.alter_column(
-        "users", "wallet_address", existing_type=sa.String(), nullable=True
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_id ON users (google_id)"
+    )
+    # DROP NOT NULL is idempotent in PostgreSQL.
+    op.execute(
+        "ALTER TABLE users ALTER COLUMN wallet_address DROP NOT NULL"
     )
 
 
