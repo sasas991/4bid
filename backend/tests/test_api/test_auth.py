@@ -1,4 +1,33 @@
 import httpx
+import pytest
+
+
+def test_dev_login_disabled_by_default(client):
+    response = client.post("/api/auth/dev-login")
+    assert response.status_code == 404
+
+
+def test_dev_login_returns_token_when_enabled(client, monkeypatch):
+    import app.api.auth as auth_module
+    monkeypatch.setattr(auth_module.settings, "DEV_AUTH_BYPASS", True)
+
+    response = client.post("/api/auth/dev-login")
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+
+def test_dev_login_idempotent(client, monkeypatch):
+    """Calling dev-login twice returns a token both times (same dev user reused)."""
+    import app.api.auth as auth_module
+    monkeypatch.setattr(auth_module.settings, "DEV_AUTH_BYPASS", True)
+
+    r1 = client.post("/api/auth/dev-login")
+    r2 = client.post("/api/auth/dev-login")
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+
 
 def test_get_nonce(client):
     wallet_address = "TestWallet1234567890"

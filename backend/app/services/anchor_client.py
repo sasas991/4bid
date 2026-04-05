@@ -279,4 +279,57 @@ class AnchorChainClient:
         return TxVerificationResult(ok=ok, slot=result.get("slot"))
 
 
-anchor_chain_client = AnchorChainClient()
+class MockAnchorChainClient:
+    """In-memory mock used when DEV_AUTH_BYPASS=true or in unit tests.
+
+    All methods return plausible-looking data without touching the RPC.
+    Tests can further monkeypatch individual methods for fine-grained control.
+    """
+
+    def get_account(self, pubkey: str) -> Optional[dict]:
+        return {"mock": True, "pubkey": pubkey}
+
+    def get_slot(self) -> int:
+        return 1
+
+    def get_decoded_auction(self, auction_pubkey: str) -> DecodedAuctionAccount:
+        import time
+        now = int(time.time())
+        return DecodedAuctionAccount(
+            auction_pubkey=auction_pubkey,
+            protocol_pubkey=DEFAULT_PUBKEY,
+            asset_pubkey=DEFAULT_PUBKEY,
+            mint_pubkey=DEFAULT_PUBKEY,
+            seller_pubkey=DEFAULT_PUBKEY,
+            winner_pubkey=DEFAULT_PUBKEY,
+            highest_bidder_pubkey=DEFAULT_PUBKEY,
+            start_ts=now - 3600,
+            commit_end_ts=now + 3600,
+            reveal_end_ts=now + 7200,
+            min_bid_lamports=1_000_000_000,
+            highest_revealed_bid_lamports=0,
+            status_code=AUCTION_STATUS_COMMIT_PHASE,
+            settled=False,
+            slot=1,
+        )
+
+    def get_decoded_asset(self, asset_pubkey: str) -> DecodedAssetAccount:
+        return DecodedAssetAccount(
+            asset_pubkey=asset_pubkey,
+            protocol_pubkey=DEFAULT_PUBKEY,
+            mint_pubkey=DEFAULT_PUBKEY,
+            current_owner_pubkey=DEFAULT_PUBKEY,
+            slot=1,
+        )
+
+    def verify_tx_hint_for_auction(
+        self, signature: str, auction_pubkey: str
+    ) -> TxVerificationResult:
+        if not signature:
+            return TxVerificationResult(ok=False, slot=None)
+        return TxVerificationResult(ok=True, slot=1)
+
+
+anchor_chain_client: AnchorChainClient = (  # type: ignore[assignment]
+    MockAnchorChainClient() if settings.DEV_AUTH_BYPASS else AnchorChainClient()
+)

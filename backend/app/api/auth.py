@@ -3,6 +3,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from ..core import security
+from ..core.config import settings
 from ..core.database import get_db
 from ..models.models import User
 from ..schemas import schemas
@@ -85,6 +86,23 @@ async def google_login(
             )
             db.add(user)
         db.flush()
+
+    access_token = security.create_access_token(data={"sub": str(user.id)})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/dev-login", response_model=schemas.Token)
+def dev_login(db: Session = Depends(get_db)):
+    """Return a JWT for a fixed dev user. Only available when DEV_AUTH_BYPASS=true."""
+    if not settings.DEV_AUTH_BYPASS:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    user = db.query(User).filter(User.email == "dev@localhost").first()
+    if not user:
+        user = User(email="dev@localhost", username="Dev User")
+        db.add(user)
+        db.flush()
+        db.refresh(user)
 
     access_token = security.create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
