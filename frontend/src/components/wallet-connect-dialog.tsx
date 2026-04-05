@@ -58,13 +58,13 @@ export function WalletConnectDialog({
         await activeWallet.adapter.connect();
       }
 
-      const publicKey = activeWallet.adapter.publicKey;
+      const publicKey = activeWallet.adapter.publicKey ?? wallet.publicKey;
 
       if (!publicKey) {
         throw new Error("Wallet did not provide a public key");
       }
 
-      const signMessage = activeWallet.adapter.signMessage;
+      const signMessage = wallet.signMessage;
 
       if (!signMessage) {
         throw new Error("Connected wallet does not support message signing");
