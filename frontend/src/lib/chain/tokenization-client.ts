@@ -15,7 +15,16 @@ const AUCTION_SEED = Buffer.from("auction");
 const BID_COMMIT_SEED = Buffer.from("bid_commit");
 const VAULT_AUTHORITY_SEED = Buffer.from("vault_authority");
 
-const idl: any = {
+type ProgramMethodBuilder = {
+  accounts: (accounts: Record<string, unknown>) => {
+    signers?: (signers: Signer[]) => { rpc: () => Promise<string> };
+    rpc: () => Promise<string>;
+  };
+};
+
+type ProgramMethods = Record<string, (...args: unknown[]) => ProgramMethodBuilder>;
+
+const idl: unknown = {
   address: PROGRAM_ID.toBase58(),
   metadata: { name: "tokenization_contract", version: "0.1.0", spec: "0.1.0" },
   instructions: [
@@ -97,8 +106,12 @@ function ensureWallet(wallet: WalletContextState): asserts wallet is WalletConte
 
 function getProgram(connection: Connection, wallet: WalletContextState) {
   ensureWallet(wallet);
-  const provider = new AnchorProvider(connection, wallet as any, { commitment: "confirmed" });
-  return new Program(idl, PROGRAM_ID, provider);
+  const provider = new AnchorProvider(
+    connection,
+    wallet as unknown as Parameters<typeof AnchorProvider>[1],
+    { commitment: "confirmed" },
+  );
+  return new Program(idl as never, PROGRAM_ID, provider);
 }
 
 export async function createAuctionOnChain(params: {
@@ -115,6 +128,7 @@ export async function createAuctionOnChain(params: {
   ensureWallet(wallet);
 
   const program = getProgram(connection, wallet);
+  const methods = program.methods as unknown as ProgramMethods;
   const [protocolPda] = PublicKey.findProgramAddressSync([PROTOCOL_SEED], PROGRAM_ID);
   const protocolInfo = await connection.getAccountInfo(protocolPda, "confirmed");
   if (!protocolInfo?.data) {
@@ -131,7 +145,7 @@ export async function createAuctionOnChain(params: {
   const mint = Keypair.generate();
   const creatorAta = deriveAta(wallet.publicKey, mint.publicKey);
 
-  const createAssetSig = await (program.methods as any)
+  const createAssetSig = await methods
     .createAsset({
       assetId: nextAssetId,
       title: params.title,
@@ -150,8 +164,11 @@ export async function createAuctionOnChain(params: {
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
-    .signers([mint as Signer])
-    .rpc();
+    .signers?.([mint as Signer])?.rpc();
+
+  if (!createAssetSig) {
+    throw new Error("Failed to create asset transaction");
+  }
 
   const [auctionPda] = PublicKey.findProgramAddressSync(
     [AUCTION_SEED, assetPda.toBuffer(), u64Le(nextAuctionId)],
@@ -170,7 +187,7 @@ export async function createAuctionOnChain(params: {
   const commitEndTs = new BN(startTs.toNumber() + (params.commitDurationSec ?? 120));
   const revealEndTs = new BN(commitEndTs.toNumber() + (params.revealDurationSec ?? 120));
 
-  const createAuctionSig = await (program.methods as any)
+  const createAuctionSig = await methods
     .createAuction({
       auctionId: nextAuctionId,
       startTs,
@@ -216,6 +233,7 @@ export async function commitBidOnChain(params: {
   const { connection, wallet, auctionPubkey, amountLamports } = params;
   ensureWallet(wallet);
   const program = getProgram(connection, wallet);
+  const methods = program.methods as unknown as ProgramMethods;
   const [protocolPda] = PublicKey.findProgramAddressSync([PROTOCOL_SEED], PROGRAM_ID);
   const auction = new PublicKey(auctionPubkey);
 
@@ -232,7 +250,7 @@ export async function commitBidOnChain(params: {
     salt,
   ]);
 
-  const signature = await (program.methods as any)
+  const signature = await methods
     .commitBid({
       commitment: Array.from(digest),
       committedAmountLamports: amountLamports,
@@ -263,6 +281,7 @@ export async function revealBidOnChain(params: {
   const { connection, wallet, auctionPubkey, amountLamports, saltHex } = params;
   ensureWallet(wallet);
   const program = getProgram(connection, wallet);
+  const methods = program.methods as unknown as ProgramMethods;
   const [protocolPda] = PublicKey.findProgramAddressSync([PROTOCOL_SEED], PROGRAM_ID);
   const auction = new PublicKey(auctionPubkey);
 
@@ -271,7 +290,7 @@ export async function revealBidOnChain(params: {
     PROGRAM_ID,
   );
 
-  const signature = await (program.methods as any)
+  const signature = await methods
     .revealBid({
       amountLamports,
       salt: Array.from(hexToBytes(saltHex)),
@@ -298,6 +317,7 @@ export async function finalizeAuctionOnChain(params: {
   const { connection, wallet, auctionPubkey, sellerPubkey, treasuryPubkey, winnerPubkey } = params;
   ensureWallet(wallet);
   const program = getProgram(connection, wallet);
+  const methods = program.methods as unknown as ProgramMethods;
   const [protocolPda] = PublicKey.findProgramAddressSync([PROTOCOL_SEED], PROGRAM_ID);
   const auction = new PublicKey(auctionPubkey);
   const winner = new PublicKey(winnerPubkey);
@@ -307,7 +327,7 @@ export async function finalizeAuctionOnChain(params: {
     PROGRAM_ID,
   );
 
-  const signature = await (program.methods as any)
+  const signature = await methods
     .finalizeAuctionState()
     .accounts({
       protocol: protocolPda,
@@ -332,6 +352,7 @@ export async function cancelAuctionOnChain(params: {
   const { connection, wallet, auctionPubkey, assetPubkey, mintPubkey, sellerPubkey } = params;
   ensureWallet(wallet);
   const program = getProgram(connection, wallet);
+  const methods = program.methods as unknown as ProgramMethods;
   const [protocolPda] = PublicKey.findProgramAddressSync([PROTOCOL_SEED], PROGRAM_ID);
 
   const auction = new PublicKey(auctionPubkey);
@@ -345,7 +366,7 @@ export async function cancelAuctionOnChain(params: {
   const vaultAssetTokenAccount = deriveAta(vaultAuthorityPda, mint);
   const sellerAssetTokenAccount = deriveAta(seller, mint);
 
-  const signature = await (program.methods as any)
+  const signature = await methods
     .cancelAuction()
     .accounts({
       protocol: protocolPda,

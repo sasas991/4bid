@@ -25,10 +25,13 @@ interface AuthContextValue extends AuthState {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    token: null,
-    isLoading: true,
+  const [state, setState] = useState<AuthState>(() => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    return {
+      user: null,
+      token,
+      isLoading: Boolean(token),
+    };
   });
 
   const fetchUser = useCallback(async () => {
@@ -42,14 +45,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (token) {
-      setState((prev) => ({ ...prev, token }));
-      fetchUser();
-    } else {
-      setState((prev) => ({ ...prev, isLoading: false }));
+    if (state.token) {
+      void Promise.resolve().then(fetchUser);
     }
-  }, [fetchUser]);
+  }, [fetchUser, state.token]);
 
   const login = useCallback(
     async (token: string) => {
