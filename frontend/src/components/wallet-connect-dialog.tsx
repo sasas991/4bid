@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { GoogleLogin } from "@react-oauth/google";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/auth";
 import { api } from "@/api/client";
+import { AXIOS_INSTANCE } from "@/api/axios-instance";
 import { useWallet } from "@solana/wallet-adapter-react";
 import bs58 from "bs58";
 
@@ -65,6 +67,30 @@ export function WalletConnectDialog({
     }
   };
 
+  const handleGoogleSuccess = async (credentialResponse: { credential?: string }) => {
+    const idToken = credentialResponse.credential;
+    if (!idToken) {
+      setError("Google sign-in failed: no token received");
+      return;
+    }
+
+    setError("");
+    setLoading(true);
+
+    try {
+      const { data } = await AXIOS_INSTANCE.post<{ access_token: string; token_type: string }>(
+        "/api/auth/google",
+        { token: idToken },
+      );
+      await login(data.access_token);
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDisconnect = async () => {
     setError("");
     try {
@@ -79,15 +105,38 @@ export function WalletConnectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Connect Wallet</DialogTitle>
+          <DialogTitle>Sign In</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          <div className="flex justify-center">
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={() => setError("Google sign-in failed")}
+              width="100%"
+              theme="outline"
+              size="large"
+              text="signin_with"
+            />
+          </div>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                or connect wallet
+              </span>
+            </div>
+          </div>
+
           <p className="text-sm text-gray-600">
-            Critical auction actions are signed and executed on-chain. Connect your wallet to continue.
+            Critical auction actions are signed and executed on-chain.
           </p>
           {wallet.publicKey && (
             <p className="text-xs text-gray-500 font-mono">{wallet.publicKey.toBase58()}</p>
           )}
+
           {error && <p className="text-sm text-destructive">{error}</p>}
           {!wallet.connected ? (
             <Button className="w-full" onClick={handleConnect} disabled={loading}>
