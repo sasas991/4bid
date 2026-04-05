@@ -31,53 +31,74 @@ export function WalletConnectDialog({
   const [loading, setLoading] = useState(false);
 
   const isWalletReady = (readyState?: string) =>
-    readyState === "Installed" || readyState === "Loadable";
+    readyState === "Installed";
+
+  const isSolflareWallet = (name?: string) =>
+    typeof name === "string" && name.toLowerCase().includes("solflare");
+
+  const supportsSignMessage = (
+    adapter: unknown,
+  ): adapter is MessageSignerWalletAdapter =>
+    !!adapter &&
+    typeof adapter === "object" &&
+    "signMessage" in adapter &&
+    typeof (adapter as { signMessage?: unknown }).signMessage === "function";
 
   const handleConnect = async () => {
     setError("");
     setLoading(true);
 
     try {
-      // Use selected wallet only if it is ready; otherwise switch to a ready one.
+      // Ensure the active wallet is Solflare and ready before connecting.
       let selectedWallet = wallet.wallet;
-      if (!selectedWallet || !isWalletReady(selectedWallet.readyState)) {
-        const ready = wallet.wallets.find(
-          (w: { readyState?: string }) =>
+      if (
+        !selectedWallet ||
+        !isSolflareWallet(selectedWallet.adapter.name) ||
+        !isWalletReady(selectedWallet.readyState)
+      ) {
+        const solflare = wallet.wallets.find(
+          (w) =>
+            isSolflareWallet(w.adapter.name) &&
             isWalletReady(w.readyState),
         );
-        if (!ready) {
-          throw new Error(
-            "No Solana wallet detected. Please install Solflare.",
-          );
+
+        if (!solflare) {
+          throw new Error("No Solflare wallet detected. Please install/unlock Solflare extension.");
         }
-        if (!selectedWallet || selectedWallet.adapter.name !== ready.adapter.name) {
-          wallet.select(ready.adapter.name);
+
+        if (!selectedWallet || selectedWallet.adapter.name !== solflare.adapter.name) {
+          wallet.select(solflare.adapter.name);
         }
-        selectedWallet = ready;
+
+        selectedWallet = solflare;
       }
 
-      const adapter = selectedWallet.adapter;
-
-      if (!adapter.publicKey) {
-        await adapter.connect();
+      if (!wallet.connected) {
+        await wallet.connect();
       }
 
-      const publicKey = adapter.publicKey;
+      const adapter = wallet.wallet?.adapter ?? selectedWallet.adapter;
+      const publicKey = wallet.publicKey ?? adapter.publicKey;
+
       if (!publicKey) {
         throw new Error("Wallet did not provide a public key after connecting");
       }
 
-      // Use the adapter's own signMessage to avoid stale React hook state.
-      if (!("signMessage" in adapter)) {
+      const signMessage = wallet.signMessage
+        ? wallet.signMessage.bind(wallet)
+        : supportsSignMessage(adapter)
+          ? adapter.signMessage.bind(adapter)
+          : null;
+
+      if (!signMessage) {
         throw new Error("Connected wallet does not support message signing");
       }
-      const signer = adapter as unknown as MessageSignerWalletAdapter;
 
       const walletAddress = publicKey.toBase58();
       const { nonce } = await api.getNonceApiAuthNonceWalletAddressGet(walletAddress);
 
       const messageBytes = new TextEncoder().encode(nonce);
-      const signed = await signer.signMessage(messageBytes);
+      const signed = await signMessage(messageBytes);
       const signature = bs58.encode(signed);
 
       const { access_token } = await api.loginApiAuthLoginPost({
@@ -96,6 +117,13 @@ export function WalletConnectDialog({
         (err as { name?: string }).name === "WalletNotReadyError"
       ) {
         setError("Wallet is not ready. Open/unlock the wallet extension and try again.");
+      } else if (
+        err &&
+        typeof err === "object" &&
+        "name" in err &&
+        (err as { name?: string }).name === "WalletConnectionError"
+      ) {
+        setError("Failed to connect wallet. Open Solflare and approve the connection request.");
       } else {
         setError(err instanceof Error ? err.message : "Connection failed");
       }
