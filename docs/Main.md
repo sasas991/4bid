@@ -43,7 +43,7 @@ Decentralized Auction & Settlement Platform on Solana
 
 Платформа, где:
 
-- Identity = кошелёк (Phantom, Solflare)
+- Identity = кошелёк (Solflare)
   Нет регистрации, нет email, нет пароля.
   Подключил кошелёк — ты участник.
 
@@ -75,7 +75,7 @@ Decentralized Auction & Settlement Platform on Solana
 │                                                             │
 │                    Next.js (Frontend)                        │
 │                                                             │
-│  - Wallet Connect (Phantom / Solflare)                      │
+│  - Wallet Connect (Solflare)                                │
 │  - Auction Dashboard                                         │
 │  - Bid Interface                                             │
 │  - Order Management                                          │

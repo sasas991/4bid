@@ -47,7 +47,7 @@ export function WalletConnectDialog({
         );
         if (!ready) {
           throw new Error(
-            "No Solana wallet detected. Please install Phantom or Solflare.",
+            "No Solana wallet detected. Please install Solflare.",
           );
         }
         if (!selectedWallet || selectedWallet.adapter.name !== ready.adapter.name) {
