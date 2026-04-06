@@ -35,7 +35,6 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react"
 import {
   cancelAuctionOnChain,
   commitBidOnChain,
-  finalizeAuctionOnChain,
 } from "@/lib/chain/tokenization-client"
 
 const LOT_LABEL: Record<string, string> = {
@@ -217,29 +216,29 @@ export default function AuctionDetailPage() {
     setFinishing(true)
     try {
       const chainAuction = auction as AuctionDetail & ChainAuctionFields
-      const treasury = process.env.NEXT_PUBLIC_PROTOCOL_TREASURY
-      if (!chainAuction.auction_pubkey || !chainAuction.seller_pubkey || !chainAuction.winner_pubkey) {
-        throw new Error("Auction chain data missing for finalize")
-      }
-      if (!treasury) {
-        throw new Error("NEXT_PUBLIC_PROTOCOL_TREASURY is not configured")
+      const missing: string[] = []
+      if (!chainAuction.auction_pubkey) missing.push("auction_pubkey")
+      if (!chainAuction.asset_pubkey) missing.push("asset_pubkey")
+      if (!chainAuction.mint_pubkey) missing.push("mint_pubkey")
+      if (!chainAuction.seller_pubkey) missing.push("seller_pubkey")
+      if (missing.length > 0) {
+        throw new Error(`Аукцион не синхронизирован с блокчейном (отсутствуют: ${missing.join(", ")}). Попробуйте обновить страницу.`)
       }
 
-      const finalized = await finalizeAuctionOnChain({
+      const canceled = await cancelAuctionOnChain({
         connection,
         wallet,
-        auctionPubkey: chainAuction.auction_pubkey,
-        sellerPubkey: chainAuction.seller_pubkey,
-        treasuryPubkey: treasury,
-        winnerPubkey: chainAuction.winner_pubkey,
+        auctionPubkey: chainAuction.auction_pubkey!,
+        assetPubkey: chainAuction.asset_pubkey!,
+        mintPubkey: chainAuction.mint_pubkey!,
+        sellerPubkey: chainAuction.seller_pubkey!,
       })
 
       await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/chain/sync`, {
         auction_pubkey: chainAuction.auction_pubkey,
         seller_pubkey: chainAuction.seller_pubkey,
-        winner_pubkey: chainAuction.winner_pubkey,
-        chain_status: "finalized",
-        finalize_signature: finalized.signature,
+        chain_status: "cancelled",
+        cancel_signature: canceled.signature,
         last_synced_slot: await connection.getSlot("confirmed"),
       })
 
@@ -452,6 +451,7 @@ export default function AuctionDetailPage() {
                     <p className="text-center text-sm text-gray-500 py-1">
                       Вы владелец этого аукциона
                     </p>
+                    {error && <p className="text-sm text-red-600">{error}</p>}
                     {isActive && (
                       <Button
                         variant="outline"
