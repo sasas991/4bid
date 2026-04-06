@@ -3,6 +3,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from ..models.models import LotType, AuctionStatus, EscrowStatus
 
+
+# File Schemas
+class FileRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    s3_key: str
+    original_filename: str
+    content_type: str
+    size_bytes: Optional[int] = None
+    uploaded_by_id: Optional[int] = None
+    created_at: datetime
+
 # User Schemas
 class UserBase(BaseModel):
     wallet_address: Optional[str] = None
@@ -15,11 +27,14 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
+    avatar_file_id: Optional[int] = None  # takes priority over avatar_url
 
 class User(UserBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     balance: float
+    avatar_file_id: Optional[int] = None
+    avatar_file: Optional[FileRecord] = None
     created_at: datetime
 
 # Bid Schemas
@@ -61,7 +76,8 @@ class AuctionBase(BaseModel):
 
 class AuctionCreate(AuctionBase):
     image_url: Optional[str] = None
-    hidden_content: Optional[str] = None # Secret link/info for 'information' lot type
+    image_file_id: Optional[int] = None  # takes priority over image_url
+    hidden_content: Optional[str] = None  # Secret link/info for 'information' lot type
 
     @field_validator("starting_price")
     @classmethod
@@ -93,6 +109,8 @@ class Auction(AuctionBase):
     owner_id: int
     winner_id: Optional[int] = None
     image_url: Optional[str] = None
+    image_file_id: Optional[int] = None
+    image_file: Optional[FileRecord] = None
     auction_pubkey: Optional[str] = None
     asset_pubkey: Optional[str] = None
     mint_pubkey: Optional[str] = None

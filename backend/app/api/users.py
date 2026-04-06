@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..core import security
-from ..models.models import User
+from ..models.models import FileRecord, User
 from ..schemas import schemas
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -21,7 +21,12 @@ def update_user_me(
         current_user.username = update.username
     if update.bio is not None:
         current_user.bio = update.bio
-    if update.avatar_url is not None:
+    if update.avatar_file_id is not None:
+        record = db.query(FileRecord).filter(FileRecord.id == update.avatar_file_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="File not found")
+        current_user.avatar_file_id = record.id
+    elif update.avatar_url is not None:
         current_user.avatar_url = update.avatar_url
     
     db.flush()

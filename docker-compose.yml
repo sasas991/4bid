@@ -10,6 +10,18 @@ services:
     ports:
       - "5432:5432"
 
+  localstack:
+    image: localstack/localstack:latest
+    environment:
+      - SERVICES=s3
+      - DEFAULT_REGION=us-east-1
+      - AWS_DEFAULT_REGION=us-east-1
+      - LOCALSTACK_HOST=localstack
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+
   backend:
     build:
       context: ./backend
@@ -22,10 +34,16 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - DEV_AUTH_BYPASS=${DEV_AUTH_BYPASS:-true}
       - DEV_SIGNER_KEYPAIR=${DEV_SIGNER_KEYPAIR:-}
+      - S3_ENDPOINT_URL=http://localstack:4566
+      - S3_BUCKET=4bid-files
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
     ports:
       - "8000:8000"
     depends_on:
       - db
+      - localstack
 
   frontend:
     build:
@@ -46,3 +64,4 @@ services:
 
 volumes:
   postgres_data:
+  localstack_data:

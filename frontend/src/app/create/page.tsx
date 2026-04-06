@@ -56,8 +56,11 @@ export default function CreateAuctionPage() {
     customDeadline: "",
     useCustomDeadline: false,
     hiddenContent: "",
-    imageUrl: "",
+    imageUrl: "",         // manual URL input
+    imageFileId: null as number | null,  // S3 upload result
+    imagePreviewUrl: "", // presigned URL returned by the upload endpoint
   })
+  const [uploadingImage, setUploadingImage] = useState(false)
 
   const updateForm = (field: string, value: string | boolean) =>
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -116,18 +119,25 @@ export default function CreateAuctionPage() {
       return
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setImageError("Максимальный размер изображения: 5MB")
+    if (file.size > 10 * 1024 * 1024) {
+      setImageError("Максимальный размер изображения: 10MB")
       return
     }
 
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-    updateForm("imageUrl", dataUrl)
+    setUploadingImage(true)
+    try {
+      const result = await api.uploadFileApiFilesUploadPost(file)
+      setForm((prev) => ({
+        ...prev,
+        imageUrl: "",
+        imageFileId: result.id,
+        imagePreviewUrl: result.url,
+      }))
+    } catch {
+      setImageError("Ошибка загрузки файла. Попробуйте ещё раз.")
+    } finally {
+      setUploadingImage(false)
+    }
   }
 
   const getDeadlineLabel = (): string => {
@@ -189,7 +199,8 @@ export default function CreateAuctionPage() {
         starting_price: parseFloat(form.startingPrice),
         deadline: getDeadline(),
         hidden_content: form.hiddenContent || undefined,
-        image_url: form.imageUrl || undefined,
+        image_file_id: form.imageFileId ?? undefined,
+        image_url: !form.imageFileId ? (form.imageUrl || undefined) : undefined,
       })
       createdAuctionId = auction.id
 
@@ -314,30 +325,53 @@ export default function CreateAuctionPage() {
               </div>
 
               <div>
-                <Label htmlFor="imageUrl" className="mb-1.5 block">Image URL</Label>
-                <Input
-                  id="imageUrl"
-                  type="url"
-                  placeholder="https://example.com/image.jpg"
-                  value={form.imageUrl}
-                  onChange={(e) => updateForm("imageUrl", e.target.value)}
-                  className="h-10"
-                />
-                <div className="mt-2">
-                  <Label htmlFor="imageUpload" className="mb-1.5 block text-xs text-gray-500">или загрузите файл</Label>
-                  <Input
-                    id="imageUpload"
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => void handleImageUpload(e.target.files?.[0] ?? null)}
-                    className="h-10"
-                  />
+                <Label className="mb-1.5 block">Image</Label>
+                <div className="space-y-2">
+                  {/* File upload — takes priority */}
+                  <div>
+                    <Label htmlFor="imageUpload" className="mb-1 block text-xs text-gray-500">Upload file (max 10 MB)</Label>
+                    <Input
+                      id="imageUpload"
+                      type="file"
+                      accept="image/*"
+                      disabled={uploadingImage}
+                      onChange={(e) => void handleImageUpload(e.target.files?.[0] ?? null)}
+                      className="h-10"
+                    />
+                    {uploadingImage && <p className="mt-1 text-xs text-[#3665F3]">Uploading...</p>}
+                    {form.imageFileId && !uploadingImage && (
+                      <p className="mt-1 text-xs text-green-600">✓ File uploaded</p>
+                    )}
+                  </div>
+                  {/* Manual URL — only if no file uploaded */}
+                  {!form.imageFileId && (
+                    <div>
+                      <Label htmlFor="imageUrl" className="mb-1 block text-xs text-gray-500">Or paste an image URL</Label>
+                      <Input
+                        id="imageUrl"
+                        type="url"
+                        placeholder="https://example.com/image.jpg"
+                        value={form.imageUrl}
+                        onChange={(e) => updateForm("imageUrl", e.target.value)}
+                        className="h-10"
+                      />
+                    </div>
+                  )}
+                  {form.imageFileId && (
+                    <button
+                      type="button"
+                      className="text-xs text-red-500 hover:underline"
+                      onClick={() => setForm((prev) => ({ ...prev, imageFileId: null, imagePreviewUrl: "" }))}
+                    >
+                      Remove uploaded file
+                    </button>
+                  )}
                 </div>
                 {imageError && <p className="mt-2 text-sm text-red-600">{imageError}</p>}
-                {form.imageUrl && (
+                {(form.imagePreviewUrl || form.imageUrl) && (
                   <div className="mt-2 rounded-lg overflow-hidden border max-h-48">
                     <img
-                      src={form.imageUrl}
+                      src={form.imagePreviewUrl || form.imageUrl}
                       alt="Preview"
                       className="w-full h-48 object-cover"
                       onError={(e) => (e.currentTarget.style.display = "none")}
@@ -455,9 +489,9 @@ export default function CreateAuctionPage() {
               <CardDescription>Confirm your auction details.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {form.imageUrl && (
+              {(form.imagePreviewUrl || form.imageUrl) && (
                 <div className="rounded-xl overflow-hidden border max-h-48">
-                  <img src={form.imageUrl} alt={form.title} className="w-full h-48 object-cover" />
+                  <img src={form.imagePreviewUrl || form.imageUrl} alt={form.title} className="w-full h-48 object-cover" />
                 </div>
               )}
 

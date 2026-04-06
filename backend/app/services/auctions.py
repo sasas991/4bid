@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from ..models.models import Auction, AuctionStatus, User
+from ..models.models import Auction, AuctionStatus, FileRecord, User
 from ..schemas import schemas
 from .auction_chain_service import apply_chain_projection
 
@@ -48,9 +48,17 @@ def create_auction(db: Session, auction: schemas.AuctionCreate, owner_id: int):
     if not owner:
         raise HTTPException(status_code=404, detail="Owner not found")
 
+    image_file_id: int | None = None
+    if auction.image_file_id is not None:
+        file_record = db.query(FileRecord).filter(FileRecord.id == auction.image_file_id).first()
+        if not file_record:
+            raise HTTPException(status_code=404, detail="Image file not found")
+        image_file_id = file_record.id
+
     db_auction = Auction(
-        **auction.model_dump(exclude={"deadline"}),
+        **auction.model_dump(exclude={"deadline", "image_file_id"}),
         deadline=deadline,
+        image_file_id=image_file_id,
         current_price=auction.starting_price,
         owner_id=owner_id,
         status=AuctionStatus.ACTIVE,
