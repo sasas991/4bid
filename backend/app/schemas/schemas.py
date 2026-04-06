@@ -132,6 +132,11 @@ class LoginRequest(BaseModel):
 class GoogleLoginRequest(BaseModel):
     token: str
 
+class LinkWalletRequest(BaseModel):
+    wallet_address: str
+    signature: str
+    nonce: str
+
 class Token(BaseModel):
     access_token: str
     token_type: str

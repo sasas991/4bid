@@ -21,14 +21,20 @@ interface WalletConnectDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+type Step = "sign-in" | "link-wallet";
+
 export function WalletConnectDialog({
   open,
   onOpenChange,
 }: WalletConnectDialogProps) {
-  const { login } = useAuth();
+  const { user, login, refreshUser } = useAuth();
   const wallet = useWallet();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<Step>("sign-in");
+
+  // If dialog opens and user is logged in but has no wallet — go straight to link step
+  const effectiveStep = user && !user.wallet_address ? "link-wallet" : step;
 
   const isWalletReady = (readyState?: string) =>
     readyState === "Installed";
@@ -44,55 +50,80 @@ export function WalletConnectDialog({
     "signMessage" in adapter &&
     typeof (adapter as { signMessage?: unknown }).signMessage === "function";
 
+  const connectSolflare = async () => {
+    let selectedWallet = wallet.wallet;
+    if (
+      !selectedWallet ||
+      !isSolflareWallet(selectedWallet.adapter.name) ||
+      !isWalletReady(selectedWallet.readyState)
+    ) {
+      const solflare = wallet.wallets.find(
+        (w) =>
+          isSolflareWallet(w.adapter.name) &&
+          isWalletReady(w.readyState),
+      );
+
+      if (!solflare) {
+        throw new Error("No Solflare wallet detected. Please install/unlock Solflare extension.");
+      }
+
+      if (!selectedWallet || selectedWallet.adapter.name !== solflare.adapter.name) {
+        wallet.select(solflare.adapter.name);
+      }
+
+      selectedWallet = solflare;
+    }
+
+    const adapter = selectedWallet.adapter;
+
+    if (!wallet.connected && !adapter.connected) {
+      await adapter.connect();
+    }
+    const publicKey = adapter.publicKey ?? wallet.publicKey;
+
+    if (!publicKey) {
+      throw new Error("Wallet did not provide a public key after connecting");
+    }
+
+    const signMessage = wallet.signMessage
+      ? wallet.signMessage.bind(wallet)
+      : supportsSignMessage(adapter)
+        ? adapter.signMessage.bind(adapter)
+        : null;
+
+    if (!signMessage) {
+      throw new Error("Connected wallet does not support message signing");
+    }
+
+    return { publicKey, signMessage };
+  };
+
+  const handleWalletError = (err: unknown) => {
+    if (
+      err &&
+      typeof err === "object" &&
+      "name" in err &&
+      (err as { name?: string }).name === "WalletNotReadyError"
+    ) {
+      setError("Wallet is not ready. Open/unlock the wallet extension and try again.");
+    } else if (
+      err &&
+      typeof err === "object" &&
+      "name" in err &&
+      (err as { name?: string }).name === "WalletConnectionError"
+    ) {
+      setError("Failed to connect wallet. Open Solflare and approve the connection request.");
+    } else {
+      setError(err instanceof Error ? err.message : "Connection failed");
+    }
+  };
+
   const handleConnect = async () => {
     setError("");
     setLoading(true);
 
     try {
-      // Ensure the active wallet is Solflare and ready before connecting.
-      let selectedWallet = wallet.wallet;
-      if (
-        !selectedWallet ||
-        !isSolflareWallet(selectedWallet.adapter.name) ||
-        !isWalletReady(selectedWallet.readyState)
-      ) {
-        const solflare = wallet.wallets.find(
-          (w) =>
-            isSolflareWallet(w.adapter.name) &&
-            isWalletReady(w.readyState),
-        );
-
-        if (!solflare) {
-          throw new Error("No Solflare wallet detected. Please install/unlock Solflare extension.");
-        }
-
-        if (!selectedWallet || selectedWallet.adapter.name !== solflare.adapter.name) {
-          wallet.select(solflare.adapter.name);
-        }
-
-        selectedWallet = solflare;
-      }
-
-      const adapter = selectedWallet.adapter;
-
-      if (!wallet.connected && !adapter.connected) {
-        await adapter.connect();
-      }
-      const publicKey = adapter.publicKey ?? wallet.publicKey;
-
-      if (!publicKey) {
-        throw new Error("Wallet did not provide a public key after connecting");
-      }
-
-      const signMessage = wallet.signMessage
-        ? wallet.signMessage.bind(wallet)
-        : supportsSignMessage(adapter)
-          ? adapter.signMessage.bind(adapter)
-          : null;
-
-      if (!signMessage) {
-        throw new Error("Connected wallet does not support message signing");
-      }
+      const { publicKey, signMessage } = await connectSolflare();
 
       const walletAddress = publicKey.toBase58();
       const { nonce } = await api.getNonceApiAuthNonceWalletAddressGet(walletAddress);
@@ -110,23 +141,7 @@ export function WalletConnectDialog({
       await login(access_token);
       onOpenChange(false);
     } catch (err) {
-      if (
-        err &&
-        typeof err === "object" &&
-        "name" in err &&
-        (err as { name?: string }).name === "WalletNotReadyError"
-      ) {
-        setError("Wallet is not ready. Open/unlock the wallet extension and try again.");
-      } else if (
-        err &&
-        typeof err === "object" &&
-        "name" in err &&
-        (err as { name?: string }).name === "WalletConnectionError"
-      ) {
-        setError("Failed to connect wallet. Open Solflare and approve the connection request.");
-      } else {
-        setError(err instanceof Error ? err.message : "Connection failed");
-      }
+      handleWalletError(err);
     } finally {
       setLoading(false);
     }
@@ -148,7 +163,7 @@ export function WalletConnectDialog({
         { token: idToken },
       );
       await login(data.access_token);
-      onOpenChange(false);
+      // Don't close dialog — if user has no wallet, effectiveStep will switch to "link-wallet"
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google sign-in failed");
     } finally {
@@ -156,47 +171,113 @@ export function WalletConnectDialog({
     }
   };
 
+  const handleLinkWallet = async () => {
+    setError("");
+    setLoading(true);
+
+    try {
+      const { publicKey, signMessage } = await connectSolflare();
+
+      const walletAddress = publicKey.toBase58();
+
+      // Get nonce for linking (stored on current user)
+      const { data: nonceData } = await AXIOS_INSTANCE.get<{ nonce: string }>(
+        "/api/auth/link-wallet/nonce",
+      );
+
+      const messageBytes = new TextEncoder().encode(nonceData.nonce);
+      const signed = await signMessage(messageBytes);
+      const signature = bs58.encode(signed);
+
+      await AXIOS_INSTANCE.post("/api/auth/link-wallet", {
+        wallet_address: walletAddress,
+        signature,
+        nonce: nonceData.nonce,
+      });
+
+      await refreshUser();
+      onOpenChange(false);
+    } catch (err) {
+      handleWalletError(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClose = (isOpen: boolean) => {
+    if (!isOpen) {
+      setStep("sign-in");
+      setError("");
+    }
+    onOpenChange(isOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Sign In</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={() => setError("Google sign-in failed")}
-              width="100%"
-              theme="outline"
-              size="large"
-              text="signin_with"
-            />
-          </div>
+        {effectiveStep === "sign-in" && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Sign In</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setError("Google sign-in failed")}
+                  width="100%"
+                  theme="outline"
+                  size="large"
+                  text="signin_with"
+                />
+              </div>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">
+                    or connect wallet
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-600">
+                Critical auction actions are signed and executed on-chain.
+              </p>
+              {wallet.publicKey && (
+                <p className="text-xs text-gray-500 font-mono">{wallet.publicKey.toBase58()}</p>
+              )}
+
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button className="w-full" onClick={handleConnect} disabled={loading}>
+                {loading ? "Connecting..." : "Connect & Sign"}
+              </Button>
             </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
-                or connect wallet
-              </span>
+          </>
+        )}
+
+        {effectiveStep === "link-wallet" && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Connect Wallet</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Connect your Solflare wallet to complete account setup. It will be linked to your Google account.
+              </p>
+              {wallet.publicKey && (
+                <p className="text-xs text-gray-500 font-mono">{wallet.publicKey.toBase58()}</p>
+              )}
+
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button className="w-full" onClick={handleLinkWallet} disabled={loading}>
+                {loading ? "Connecting..." : "Connect Solflare"}
+              </Button>
             </div>
-          </div>
-
-          <p className="text-sm text-gray-600">
-            Critical auction actions are signed and executed on-chain.
-          </p>
-          {wallet.publicKey && (
-            <p className="text-xs text-gray-500 font-mono">{wallet.publicKey.toBase58()}</p>
-          )}
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button className="w-full" onClick={handleConnect} disabled={loading}>
-            {loading ? "Connecting..." : "Connect & Sign"}
-          </Button>
-        </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

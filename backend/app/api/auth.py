@@ -108,6 +108,54 @@ def dev_login(db: Session = Depends(get_db)):
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+@router.post("/link-wallet", response_model=schemas.User)
+def link_wallet(
+    request: schemas.LinkWalletRequest,
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Link a Solana wallet to the currently authenticated user."""
+    if current_user.wallet_address:
+        raise HTTPException(status_code=400, detail="Wallet already linked")
+
+    existing = db.query(User).filter(
+        User.wallet_address == request.wallet_address
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Wallet already used by another account")
+
+    if current_user.nonce != request.nonce:
+        raise HTTPException(status_code=400, detail="Invalid nonce")
+
+    is_valid = auth.verify_solana_signature(
+        request.wallet_address,
+        request.signature,
+        request.nonce,
+    )
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    current_user.wallet_address = request.wallet_address
+    current_user.nonce = None
+    db.flush()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.get("/link-wallet/nonce", response_model=schemas.NonceResponse)
+def get_link_wallet_nonce(
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate a nonce for wallet linking (stored on the current user)."""
+    if current_user.wallet_address:
+        raise HTTPException(status_code=400, detail="Wallet already linked")
+    nonce = auth.generate_nonce()
+    current_user.nonce = nonce
+    db.flush()
+    return {"nonce": nonce}
+
+
 @router.get("/me", response_model=schemas.User)
 def read_users_me(
     current_user: User = Depends(security.get_current_user),
