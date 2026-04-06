@@ -73,12 +73,12 @@ export function WalletConnectDialog({
         selectedWallet = solflare;
       }
 
-      if (!wallet.connected) {
-        await wallet.connect();
-      }
+      const adapter = selectedWallet.adapter;
 
-      const adapter = wallet.wallet?.adapter ?? selectedWallet.adapter;
-      const publicKey = wallet.publicKey ?? adapter.publicKey;
+      if (!wallet.connected && !adapter.connected) {
+        await adapter.connect();
+      }
+      const publicKey = adapter.publicKey ?? wallet.publicKey;
 
       if (!publicKey) {
         throw new Error("Wallet did not provide a public key after connecting");
