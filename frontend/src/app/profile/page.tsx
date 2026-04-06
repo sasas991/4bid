@@ -66,7 +66,9 @@ export default function ProfilePage() {
       setError("Enter a valid deposit amount");
       return;
     }
-    if (!wallet.publicKey || !wallet.sendTransaction) {
+    const adapter = wallet.wallet?.adapter;
+    const pubkey = wallet.publicKey ?? adapter?.publicKey;
+    if (!pubkey || !adapter) {
       setError("Connect your Solflare wallet first");
       return;
     }
@@ -81,17 +83,21 @@ export default function ProfilePage() {
       const lamports = Math.round(amount * LAMPORTS_PER_SOL);
       const tx = new Transaction().add(
         SystemProgram.transfer({
-          fromPubkey: wallet.publicKey,
+          fromPubkey: pubkey,
           toPubkey: new PublicKey(treasury),
           lamports,
         }),
       );
-      tx.feePayer = wallet.publicKey;
+      tx.feePayer = pubkey;
       tx.recentBlockhash = (
         await connection.getLatestBlockhash("confirmed")
       ).blockhash;
 
-      const signature = await wallet.sendTransaction(tx, connection);
+      if (!("signTransaction" in adapter) || typeof adapter.signTransaction !== "function") {
+        throw new Error("Wallet does not support transaction signing");
+      }
+      const signed = await (adapter as unknown as { signTransaction: (tx: Transaction) => Promise<Transaction> }).signTransaction(tx);
+      const signature = await connection.sendRawTransaction(signed.serialize());
       await connection.confirmTransaction(signature, "confirmed");
 
       await api.depositFundsApiUsersDepositPost({
