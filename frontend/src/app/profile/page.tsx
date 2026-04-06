@@ -10,9 +10,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatDateRu } from "@/lib/date";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import {
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  LAMPORTS_PER_SOL,
+} from "@solana/web3.js";
+import bs58 from "bs58";
 
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth();
+  const wallet = useWallet();
+  const { connection } = useConnection();
   const [editing, setEditing] = useState(false);
   const [username, setUsername] = useState(user?.username ?? "");
   const [bio, setBio] = useState(user?.bio ?? "");
@@ -48,12 +58,84 @@ export default function ProfilePage() {
     }
   };
 
-  const handleWithdraw = async () => {
-    setError("Withdraw via mocked signatures is disabled. Use wallet-signed on-chain transfer flow.");
+  const handleDeposit = async () => {
+    setError("");
+    const amount = parseFloat(depositAmount);
+    if (!amount || amount <= 0) {
+      setError("Enter a valid deposit amount");
+      return;
+    }
+    if (!wallet.publicKey || !wallet.sendTransaction) {
+      setError("Connect your Solflare wallet first");
+      return;
+    }
+    const treasury = process.env.NEXT_PUBLIC_PROTOCOL_TREASURY;
+    if (!treasury) {
+      setError("Platform treasury is not configured");
+      return;
+    }
+
+    setDepositing(true);
+    try {
+      const lamports = Math.round(amount * LAMPORTS_PER_SOL);
+      const tx = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: wallet.publicKey,
+          toPubkey: new PublicKey(treasury),
+          lamports,
+        }),
+      );
+      tx.feePayer = wallet.publicKey;
+      tx.recentBlockhash = (
+        await connection.getLatestBlockhash("confirmed")
+      ).blockhash;
+
+      const signature = await wallet.sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, "confirmed");
+
+      await api.depositFundsApiUsersDepositPost({
+        amount,
+        signature,
+      });
+      await refreshUser();
+      setDepositAmount("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Deposit failed");
+    } finally {
+      setDepositing(false);
+    }
   };
 
-  const handleDeposit = async () => {
-    setError("Deposit via mocked signatures is disabled. Use wallet-signed on-chain transfer flow.");
+  const handleWithdraw = async () => {
+    setError("");
+    const amount = parseFloat(withdrawAmount);
+    if (!amount || amount <= 0) {
+      setError("Enter a valid withdraw amount");
+      return;
+    }
+    if (!wallet.publicKey || !wallet.signMessage) {
+      setError("Connect your Solflare wallet first");
+      return;
+    }
+
+    setWithdrawing(true);
+    try {
+      const message = `Withdraw ${amount} SOL from 4bid`;
+      const messageBytes = new TextEncoder().encode(message);
+      const signed = await wallet.signMessage(messageBytes);
+      const signature = bs58.encode(signed);
+
+      await api.withdrawFundsApiUsersWithdrawPost({
+        amount,
+        signature,
+      });
+      await refreshUser();
+      setWithdrawAmount("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Withdraw failed");
+    } finally {
+      setWithdrawing(false);
+    }
   };
 
   return (
