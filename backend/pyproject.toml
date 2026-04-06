@@ -20,4 +20,5 @@ dependencies = [
     "sqlalchemy>=2.0.48",
     "uvicorn[standard]>=0.42.0",
     "aiohttp>=3.11.0",
+    "boto3>=1.35.0",
 ]

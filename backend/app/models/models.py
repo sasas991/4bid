@@ -27,16 +27,18 @@ class User(Base):
     google_id = Column(String, unique=True, index=True, nullable=True)
     username = Column(String, nullable=True)
     bio = Column(Text, nullable=True)
-    avatar_url = Column(String, nullable=True)
+    avatar_url = Column(String, nullable=True)       # external URL (e.g. Google OAuth picture)
+    avatar_file_id = Column(Integer, ForeignKey("files.id"), nullable=True)  # S3-uploaded avatar
     nonce = Column(String, nullable=True)
-    
+
     # Internal balance for withdrawals (earnings from auctions)
     balance = Column(Float, default=0.0)
-    
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     auctions = relationship("Auction", back_populates="owner", foreign_keys="[Auction.owner_id]")
     bids = relationship("Bid", back_populates="user")
+    avatar_file = relationship("FileRecord", foreign_keys=[avatar_file_id])
 
 class Auction(Base):
     __tablename__ = "auctions"
@@ -46,7 +48,8 @@ class Auction(Base):
     description = Column(Text, nullable=True)
     lot_type = Column(Enum(LotType, values_callable=lambda e: [x.value for x in e]), default=LotType.PHYSICAL_ITEM)
     
-    image_url = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)          # external URL (legacy / manual entry)
+    image_file_id = Column(Integer, ForeignKey("files.id"), nullable=True)  # S3-uploaded image
 
     # For 'information' type: content only visible to winner after payment
     hidden_content = Column(Text, nullable=True)
@@ -76,6 +79,7 @@ class Auction(Base):
     winner = relationship("User", foreign_keys=[winner_id])
     bids = relationship("Bid", back_populates="auction")
     escrow = relationship("Escrow", back_populates="auction", uselist=False)
+    image_file = relationship("FileRecord", foreign_keys=[image_file_id])
 
 class Bid(Base):
     __tablename__ = "bids"
@@ -94,6 +98,20 @@ class Bid(Base):
 
     user = relationship("User", back_populates="bids")
     auction = relationship("Auction", back_populates="bids")
+
+class FileRecord(Base):
+    __tablename__ = "files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    s3_key = Column(String, unique=True, nullable=False, index=True)
+    original_filename = Column(String, nullable=False)
+    content_type = Column(String, nullable=False)
+    size_bytes = Column(Integer, nullable=True)
+    uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    uploaded_by = relationship("User")
+
 
 class EscrowStatus(str, enum.Enum):
     HELD = "held"           # Funds received from buyer
