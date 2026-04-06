@@ -44,9 +44,6 @@ env/
 htmlcov/
 .coverage
 
-# Docker
-.dockerignore
-
 # Idea
 .idea/
 .vscode/
