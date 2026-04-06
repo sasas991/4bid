@@ -16,7 +16,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import type { MessageSignerWalletAdapter } from "@solana/wallet-adapter-base";
 import bs58 from "bs58";
 
-type Step = "choose" | "link-wallet";
+type Step = "sign-in" | "link-wallet";
 
 interface WalletConnectDialogProps {
   open: boolean;
@@ -24,12 +24,10 @@ interface WalletConnectDialogProps {
   initialStep?: Step;
 }
 
-type Step = "sign-in" | "link-wallet";
-
 export function WalletConnectDialog({
   open,
   onOpenChange,
-  initialStep = "choose",
+  initialStep = "sign-in",
 }: WalletConnectDialogProps) {
   const { login, logout, refreshUser } = useAuth();
   const wallet = useWallet();
@@ -214,7 +212,6 @@ export function WalletConnectDialog({
       logout();
       resetAndClose(false);
     }
-    onOpenChange(isOpen);
   };
 
   if (step === "link-wallet") {
@@ -252,7 +249,7 @@ export function WalletConnectDialog({
   return (
     <Dialog open={open} onOpenChange={resetAndClose}>
       <DialogContent className="sm:max-w-md">
-        {effectiveStep === "sign-in" && (
+        {step === "sign-in" && (
           <>
             <DialogHeader>
               <DialogTitle>Sign In</DialogTitle>
@@ -295,7 +292,7 @@ export function WalletConnectDialog({
           </>
         )}
 
-        {effectiveStep === "link-wallet" && (
+        {step === "link-wallet" && (
           <>
             <DialogHeader>
               <DialogTitle>Connect Wallet</DialogTitle>
