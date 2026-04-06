@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatDateRu } from "@/lib/date";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import type { MessageSignerWalletAdapter } from "@solana/wallet-adapter-base";
 import {
   PublicKey,
   SystemProgram,
@@ -113,8 +114,22 @@ export default function ProfilePage() {
       setError("Enter a valid withdraw amount");
       return;
     }
-    if (!wallet.publicKey || !wallet.signMessage) {
+    const adapter = wallet.wallet?.adapter;
+    if (!wallet.publicKey || !adapter) {
       setError("Connect your Solflare wallet first");
+      return;
+    }
+
+    const signMessage =
+      wallet.signMessage ??
+      (adapter &&
+        "signMessage" in adapter &&
+        typeof (adapter as MessageSignerWalletAdapter).signMessage === "function"
+          ? (adapter as MessageSignerWalletAdapter).signMessage.bind(adapter)
+          : null);
+
+    if (!signMessage) {
+      setError("Connected wallet does not support message signing");
       return;
     }
 
@@ -122,7 +137,7 @@ export default function ProfilePage() {
     try {
       const message = `Withdraw ${amount} SOL from 4bid`;
       const messageBytes = new TextEncoder().encode(message);
-      const signed = await wallet.signMessage(messageBytes);
+      const signed = await signMessage(messageBytes);
       const signature = bs58.encode(signed);
 
       await api.withdrawFundsApiUsersWithdrawPost({
