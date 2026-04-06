@@ -110,7 +110,7 @@ class FileRecord(Base):
     uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    uploaded_by = relationship("User")
+    uploaded_by = relationship("User", foreign_keys=[uploaded_by_id])
 
 
 class EscrowStatus(str, enum.Enum):

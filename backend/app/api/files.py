@@ -1,5 +1,5 @@
 """
-File storage endpoints backed by LocalStack S3.
+File storage endpoints backed by MinIO (S3-compatible).
 
 Every completed upload is recorded in the `files` DB table so any entity
 (auction, user profile, …) can reference it by integer ID instead of a raw

@@ -126,7 +126,7 @@ export default function CreateAuctionPage() {
 
     setUploadingImage(true)
     try {
-      const result = await api.uploadFileApiFilesUploadPost(file)
+      const result = await api.uploadFileApiFilesUploadPost({ file })
       setForm((prev) => ({
         ...prev,
         imageUrl: "",

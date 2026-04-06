@@ -10,17 +10,17 @@ services:
     ports:
       - "5432:5432"
 
-  localstack:
-    image: localstack/localstack:latest
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
     environment:
-      - SERVICES=s3
-      - DEFAULT_REGION=us-east-1
-      - AWS_DEFAULT_REGION=us-east-1
-      - LOCALSTACK_HOST=localstack
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
     ports:
-      - "4566:4566"
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      - localstack_data:/var/lib/localstack
+      - minio_data:/data
 
   backend:
     build:
@@ -34,16 +34,17 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - DEV_AUTH_BYPASS=${DEV_AUTH_BYPASS:-true}
       - DEV_SIGNER_KEYPAIR=${DEV_SIGNER_KEYPAIR:-}
-      - S3_ENDPOINT_URL=http://localstack:4566
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_PUBLIC_URL=http://localhost:9000
       - S3_BUCKET=4bid-files
-      - AWS_ACCESS_KEY_ID=test
-      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
       - AWS_REGION=us-east-1
     ports:
       - "8000:8000"
     depends_on:
       - db
-      - localstack
+      - minio
 
   frontend:
     build:
@@ -64,4 +65,4 @@ services:
 
 volumes:
   postgres_data:
-  localstack_data:
+  minio_data:
