@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatDateRu } from "@/lib/date";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import type { MessageSignerWalletAdapter } from "@solana/wallet-adapter-base";
 import {
   PublicKey,
   SystemProgram,
@@ -65,7 +66,9 @@ export default function ProfilePage() {
       setError("Enter a valid deposit amount");
       return;
     }
-    if (!wallet.publicKey || !wallet.sendTransaction) {
+    const adapter = wallet.wallet?.adapter;
+    const pubkey = wallet.publicKey ?? adapter?.publicKey;
+    if (!pubkey || !adapter) {
       setError("Connect your Solflare wallet first");
       return;
     }
@@ -80,17 +83,21 @@ export default function ProfilePage() {
       const lamports = Math.round(amount * LAMPORTS_PER_SOL);
       const tx = new Transaction().add(
         SystemProgram.transfer({
-          fromPubkey: wallet.publicKey,
+          fromPubkey: pubkey,
           toPubkey: new PublicKey(treasury),
           lamports,
         }),
       );
-      tx.feePayer = wallet.publicKey;
+      tx.feePayer = pubkey;
       tx.recentBlockhash = (
         await connection.getLatestBlockhash("confirmed")
       ).blockhash;
 
-      const signature = await wallet.sendTransaction(tx, connection);
+      if (!("signTransaction" in adapter) || typeof adapter.signTransaction !== "function") {
+        throw new Error("Wallet does not support transaction signing");
+      }
+      const signed = await (adapter as unknown as { signTransaction: (tx: Transaction) => Promise<Transaction> }).signTransaction(tx);
+      const signature = await connection.sendRawTransaction(signed.serialize());
       await connection.confirmTransaction(signature, "confirmed");
 
       await api.depositFundsApiUsersDepositPost({
@@ -113,8 +120,22 @@ export default function ProfilePage() {
       setError("Enter a valid withdraw amount");
       return;
     }
-    if (!wallet.publicKey || !wallet.signMessage) {
+    const adapter = wallet.wallet?.adapter;
+    if (!wallet.publicKey || !adapter) {
       setError("Connect your Solflare wallet first");
+      return;
+    }
+
+    const signMessage =
+      wallet.signMessage ??
+      (adapter &&
+        "signMessage" in adapter &&
+        typeof (adapter as MessageSignerWalletAdapter).signMessage === "function"
+          ? (adapter as MessageSignerWalletAdapter).signMessage.bind(adapter)
+          : null);
+
+    if (!signMessage) {
+      setError("Connected wallet does not support message signing");
       return;
     }
 
@@ -122,7 +143,7 @@ export default function ProfilePage() {
     try {
       const message = `Withdraw ${amount} SOL from 4bid`;
       const messageBytes = new TextEncoder().encode(message);
-      const signed = await wallet.signMessage(messageBytes);
+      const signed = await signMessage(messageBytes);
       const signature = bs58.encode(signed);
 
       await api.withdrawFundsApiUsersWithdrawPost({
