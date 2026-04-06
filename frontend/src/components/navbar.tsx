@@ -11,6 +11,7 @@ import { useAuth } from "@/context/auth"
 import { WalletConnectDialog } from "@/components/wallet-connect-dialog"
 import { useWallet } from "@solana/wallet-adapter-react"
 import { AXIOS_INSTANCE } from "@/api/axios-instance"
+import { formatSolBalance } from "@/lib/sol"
 
 const DEV_AUTH_BYPASS = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true"
 
@@ -50,8 +51,8 @@ export function Navbar() {
                 <Link href="/profile" className="hover:text-white transition-colors">
                   Profile
                 </Link>
-                <span className="text-blue-200">
-                  {user.balance.toFixed(2)} SOL
+                <span className="rounded bg-white/15 px-2 py-0.5 font-semibold text-white">
+                  {formatSolBalance(user.balance)} SOL
                 </span>
               </>
             )}

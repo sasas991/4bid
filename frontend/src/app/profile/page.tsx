@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatDateRu } from "@/lib/date";
 import { resolveFileUrl } from "@/lib/files";
+import { formatSolBalance } from "@/lib/sol";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import type { MessageSignerWalletAdapter } from "@solana/wallet-adapter-base";
 import {
@@ -311,7 +312,7 @@ export default function ProfilePage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-3xl font-bold">
-            {user.balance.toFixed(2)}{" "}
+            {formatSolBalance(user.balance)}{" "}
             <span className="text-lg text-muted-foreground">SOL</span>
           </p>
 
