@@ -9,6 +9,7 @@ import subprocess
 from .api import api_router
 from .core.config import settings
 from .core.database import SessionLocal, engine, Base
+from .services.s3_service import ensure_bucket_exists
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
                 raise
             time.sleep(1)
     Base.metadata.create_all(bind=engine)
+    ensure_bucket_exists()
     # Apply any pending Alembic migrations via the CLI (avoids the local
     # alembic/ directory shadowing the installed alembic package on import).
     result = subprocess.run(

@@ -25,6 +25,7 @@ export function Navbar() {
   const { user, isLoading, logout, login } = useAuth()
   const wallet = useWallet()
   const [connectOpen, setConnectOpen] = React.useState(false)
+  const [linkWalletOpen, setLinkWalletOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
 
   const handleDevLogin = React.useCallback(async () => {
@@ -113,6 +114,17 @@ export function Navbar() {
               <div className="h-9 w-24 animate-pulse rounded-lg bg-gray-200" />
             ) : user ? (
               <>
+                {!user.wallet_address && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9 gap-1.5 border-amber-400 text-amber-600 hover:bg-amber-50"
+                    onClick={() => setLinkWalletOpen(true)}
+                  >
+                    <WalletIcon className="h-4 w-4" />
+                    <span className="hidden sm:inline">Link Wallet</span>
+                  </Button>
+                )}
                 <Link href="/profile">
                   <Button
                     variant="secondary"
@@ -203,6 +215,7 @@ export function Navbar() {
       </nav>
 
       <WalletConnectDialog open={connectOpen} onOpenChange={setConnectOpen} />
+      <WalletConnectDialog open={linkWalletOpen} onOpenChange={setLinkWalletOpen} initialStep="link-wallet" />
     </header>
   )
 }

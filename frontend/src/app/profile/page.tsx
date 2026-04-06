@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatDateRu } from "@/lib/date";
+import { resolveFileUrl } from "@/lib/files";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import type { MessageSignerWalletAdapter } from "@solana/wallet-adapter-base";
 import {
@@ -28,6 +29,10 @@ export default function ProfilePage() {
   const [username, setUsername] = useState(user?.username ?? "");
   const [bio, setBio] = useState(user?.bio ?? "");
   const [saving, setSaving] = useState(false);
+  const [avatarFileId, setAvatarFileId] = useState<number | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
 
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [depositAmount, setDepositAmount] = useState("");
@@ -43,15 +48,41 @@ export default function ProfilePage() {
     );
   }
 
+  const handleAvatarUpload = async (file: File | null) => {
+    if (!file) return;
+    setAvatarError("");
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Only images are allowed");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError("Max avatar size: 5 MB");
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const result = await api.uploadFileApiFilesUploadPost(file);
+      setAvatarFileId(result.id);
+      setAvatarPreviewUrl(result.url);
+    } catch {
+      setAvatarError("Upload failed. Please try again.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       await api.updateUserMeApiUsersMePatch({
         username: username || undefined,
         bio: bio || undefined,
+        avatar_file_id: avatarFileId ?? undefined,
       });
       await refreshUser();
       setEditing(false);
+      setAvatarFileId(null);
+      setAvatarPreviewUrl(null);
     } catch {
       setError("Failed to update profile");
     } finally {
@@ -172,6 +203,9 @@ export default function ProfilePage() {
                 onClick={() => {
                   setUsername(user.username ?? "");
                   setBio(user.bio ?? "");
+                  setAvatarFileId(null);
+                  setAvatarPreviewUrl(null);
+                  setAvatarError("");
                   setEditing(true);
                 }}
               >
@@ -181,6 +215,36 @@ export default function ProfilePage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Avatar */}
+          <div className="flex items-center gap-4">
+            {(() => {
+              const url = avatarPreviewUrl ?? resolveFileUrl(user.avatar_file, user.avatar_url);
+              return url ? (
+                <img src={url} alt="avatar" className="h-16 w-16 rounded-full object-cover border" />
+              ) : (
+                <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center text-2xl font-bold text-muted-foreground select-none">
+                  {(user.username ?? user.email ?? "?")[0].toUpperCase()}
+                </div>
+              );
+            })()}
+            {editing && (
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="avatarUpload" className="text-xs text-muted-foreground">Change avatar (max 5 MB)</Label>
+                <Input
+                  id="avatarUpload"
+                  type="file"
+                  accept="image/*"
+                  disabled={avatarUploading}
+                  onChange={(e) => void handleAvatarUpload(e.target.files?.[0] ?? null)}
+                  className="h-9 text-xs"
+                />
+                {avatarUploading && <p className="text-xs text-[#3665F3]">Uploading...</p>}
+                {avatarFileId && !avatarUploading && <p className="text-xs text-green-600">✓ Ready to save</p>}
+                {avatarError && <p className="text-xs text-destructive">{avatarError}</p>}
+              </div>
+            )}
+          </div>
+
           <div>
             <Label className="text-muted-foreground">Wallet</Label>
             <p className="font-mono text-sm">{user.wallet_address}</p>
@@ -206,10 +270,15 @@ export default function ProfilePage() {
                 />
               </div>
               <div className="flex gap-2">
-                <Button onClick={handleSave} disabled={saving}>
+                <Button onClick={handleSave} disabled={saving || avatarUploading}>
                   {saving ? "Saving..." : "Save"}
                 </Button>
-                <Button variant="outline" onClick={() => setEditing(false)}>
+                <Button variant="outline" onClick={() => {
+                  setEditing(false);
+                  setAvatarFileId(null);
+                  setAvatarPreviewUrl(null);
+                  setAvatarError("");
+                }}>
                   Cancel
                 </Button>
               </div>

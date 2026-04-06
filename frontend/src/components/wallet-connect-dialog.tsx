@@ -16,9 +16,12 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import type { MessageSignerWalletAdapter } from "@solana/wallet-adapter-base";
 import bs58 from "bs58";
 
+type Step = "choose" | "link-wallet";
+
 interface WalletConnectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialStep?: Step;
 }
 
 type Step = "sign-in" | "link-wallet";
@@ -26,15 +29,21 @@ type Step = "sign-in" | "link-wallet";
 export function WalletConnectDialog({
   open,
   onOpenChange,
+  initialStep = "choose",
 }: WalletConnectDialogProps) {
-  const { user, login, refreshUser } = useAuth();
+  const { login, logout, refreshUser } = useAuth();
   const wallet = useWallet();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<Step>("sign-in");
+  const [step, setStep] = useState<Step>(initialStep);
 
-  // If dialog opens and user is logged in but has no wallet — go straight to link step
-  const effectiveStep = user && !user.wallet_address ? "link-wallet" : step;
+  const resetAndClose = (isOpen: boolean) => {
+    if (!isOpen) {
+      setStep(initialStep);
+      setError("");
+    }
+    onOpenChange(isOpen);
+  };
 
   const isWalletReady = (readyState?: string) =>
     readyState === "Installed";
@@ -50,7 +59,7 @@ export function WalletConnectDialog({
     "signMessage" in adapter &&
     typeof (adapter as { signMessage?: unknown }).signMessage === "function";
 
-  const connectSolflare = async () => {
+  const connectAndSign = async () => {
     let selectedWallet = wallet.wallet;
     if (
       !selectedWallet ||
@@ -98,33 +107,12 @@ export function WalletConnectDialog({
     return { publicKey, signMessage };
   };
 
-  const handleWalletError = (err: unknown) => {
-    if (
-      err &&
-      typeof err === "object" &&
-      "name" in err &&
-      (err as { name?: string }).name === "WalletNotReadyError"
-    ) {
-      setError("Wallet is not ready. Open/unlock the wallet extension and try again.");
-    } else if (
-      err &&
-      typeof err === "object" &&
-      "name" in err &&
-      (err as { name?: string }).name === "WalletConnectionError"
-    ) {
-      setError("Failed to connect wallet. Open Solflare and approve the connection request.");
-    } else {
-      setError(err instanceof Error ? err.message : "Connection failed");
-    }
-  };
-
   const handleConnect = async () => {
     setError("");
     setLoading(true);
 
     try {
-      const { publicKey, signMessage } = await connectSolflare();
-
+      const { publicKey, signMessage } = await connectAndSign();
       const walletAddress = publicKey.toBase58();
       const { nonce } = await api.getNonceApiAuthNonceWalletAddressGet(walletAddress);
 
@@ -139,7 +127,7 @@ export function WalletConnectDialog({
       });
 
       await login(access_token);
-      onOpenChange(false);
+      resetAndClose(false);
     } catch (err) {
       handleWalletError(err);
     } finally {
@@ -163,7 +151,7 @@ export function WalletConnectDialog({
         { token: idToken },
       );
       await login(data.access_token);
-      // Don't close dialog — if user has no wallet, effectiveStep will switch to "link-wallet"
+      setStep("link-wallet");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google sign-in failed");
     } finally {
@@ -176,44 +164,93 @@ export function WalletConnectDialog({
     setLoading(true);
 
     try {
-      const { publicKey, signMessage } = await connectSolflare();
-
+      const { publicKey, signMessage } = await connectAndSign();
       const walletAddress = publicKey.toBase58();
 
-      // Get nonce for linking (stored on current user)
-      const { data: nonceData } = await AXIOS_INSTANCE.get<{ nonce: string }>(
-        "/api/auth/link-wallet/nonce",
-      );
+      const { nonce } = await api.getLinkWalletNonceApiAuthLinkWalletNonceWalletAddressGet(walletAddress);
 
-      const messageBytes = new TextEncoder().encode(nonceData.nonce);
+      const messageBytes = new TextEncoder().encode(nonce);
       const signed = await signMessage(messageBytes);
       const signature = bs58.encode(signed);
 
-      await AXIOS_INSTANCE.post("/api/auth/link-wallet", {
+      await api.linkWalletApiAuthLinkWalletPost({
         wallet_address: walletAddress,
         signature,
-        nonce: nonceData.nonce,
+        nonce,
       });
 
       await refreshUser();
-      onOpenChange(false);
+      resetAndClose(false);
     } catch (err) {
-      handleWalletError(err);
+      if (
+        err &&
+        typeof err === "object" &&
+        "name" in err &&
+        (err as { name?: string }).name === "WalletNotReadyError"
+      ) {
+        setError("Wallet is not ready. Open/unlock the wallet extension and try again.");
+      } else if (
+        err &&
+        typeof err === "object" &&
+        "name" in err &&
+        (err as { name?: string }).name === "WalletConnectionError"
+      ) {
+        setError("Failed to connect wallet. Open Solflare and approve the connection request.");
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to link wallet");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClose = (isOpen: boolean) => {
-    if (!isOpen) {
-      setStep("sign-in");
-      setError("");
+  const handleDisconnect = async () => {
+    setError("");
+    setLoading(true);
+
+    try {
+      await wallet.disconnect();
+    } finally {
+      logout();
+      resetAndClose(false);
     }
     onOpenChange(isOpen);
   };
 
+  if (step === "link-wallet") {
+    return (
+      <Dialog open={open} onOpenChange={resetAndClose}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect Solflare Wallet</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Connect your Solflare wallet to sign on-chain transactions such as bids, deposits, and withdrawals.
+            </p>
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
+
+            <Button className="w-full" onClick={handleLinkWallet} disabled={loading}>
+              {loading ? "Connecting..." : "Connect Solflare"}
+            </Button>
+
+            <Button
+              variant="ghost"
+              className="w-full text-muted-foreground"
+              onClick={() => resetAndClose(false)}
+              disabled={loading}
+            >
+              Skip for now
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={resetAndClose}>
       <DialogContent className="sm:max-w-md">
         {effectiveStep === "sign-in" && (
           <>

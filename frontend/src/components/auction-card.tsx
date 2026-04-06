@@ -9,6 +9,7 @@ import type { Auction } from "@/api/generated"
 import { LotType } from "@/api/generated"
 import { cn } from "@/lib/utils"
 import { formatTimeLeftRu } from "@/lib/date"
+import { resolveFileUrl } from "@/lib/files"
 
 const LOT_STYLE: Record<string, { label: string; icon: string; color: string }> = {
   [LotType.physical_item]: { label: "Physical", icon: "📦", color: "from-slate-600 to-slate-900" },
@@ -25,6 +26,7 @@ interface AuctionCardProps {
 export function AuctionCard({ auction, className }: AuctionCardProps) {
   const { label: timeLabel, urgent } = formatTimeLeftRu(auction.deadline)
   const style = LOT_STYLE[auction.lot_type ?? LotType.physical_item]
+  const imageUrl = resolveFileUrl(auction.image_file, auction.image_url)
 
   return (
     <Link href={`/auctions/${auction.id}`}>
@@ -34,9 +36,9 @@ export function AuctionCard({ auction, className }: AuctionCardProps) {
           className
         )}
       >
-        <div className={cn("relative h-44 overflow-hidden", !auction.image_url && "bg-gradient-to-br", !auction.image_url && style.color)}>
-          {auction.image_url ? (
-            <img src={auction.image_url} alt={auction.title} className="h-full w-full object-cover" />
+        <div className={cn("relative h-44 overflow-hidden", !imageUrl && "bg-gradient-to-br", !imageUrl && style.color)}>
+          {imageUrl ? (
+            <img src={imageUrl} alt={auction.title} className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center text-5xl">
               <span>{style.icon}</span>
