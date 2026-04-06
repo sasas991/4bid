@@ -6,6 +6,7 @@ from ..core.config import settings
 
 
 def get_s3_client():
+    """S3 client for internal (container-to-container) operations."""
     return boto3.client(
         "s3",
         endpoint_url=settings.S3_ENDPOINT_URL,
@@ -16,14 +17,25 @@ def get_s3_client():
     )
 
 
+def _get_public_s3_client():
+    """S3 client using the public URL — used only for generating presigned URLs
+    that browsers can follow."""
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.S3_PUBLIC_URL,
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        region_name=settings.AWS_REGION,
+        config=Config(signature_version="s3v4"),
+    )
+
+
 def ensure_bucket_exists() -> None:
     s3 = get_s3_client()
     try:
+        s3.head_bucket(Bucket=settings.S3_BUCKET)
+    except ClientError:
         s3.create_bucket(Bucket=settings.S3_BUCKET)
-    except ClientError as e:
-        code = e.response["Error"]["Code"]
-        if code not in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
-            raise
 
 
 def make_key(filename: str) -> str:
@@ -46,8 +58,8 @@ def upload_file(data: bytes, key: str, content_type: str = "application/octet-st
 
 
 def get_presigned_download_url(key: str, expires_in: int = 3600) -> str:
-    """Return a presigned GET URL for the given key."""
-    s3 = get_s3_client()
+    """Return a presigned GET URL for the given key (browser-accessible)."""
+    s3 = _get_public_s3_client()
     return s3.generate_presigned_url(
         "get_object",
         Params={"Bucket": settings.S3_BUCKET, "Key": key},

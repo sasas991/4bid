@@ -61,7 +61,7 @@ export default function ProfilePage() {
     }
     setAvatarUploading(true);
     try {
-      const result = await api.uploadFileApiFilesUploadPost(file);
+      const result = await api.uploadFileApiFilesUploadPost({ file });
       setAvatarFileId(result.id);
       setAvatarPreviewUrl(result.url);
     } catch {

@@ -29,11 +29,12 @@ class Settings(BaseSettings):
     # Base58-encoded keypair for local dev signing (optional, dev-only)
     DEV_SIGNER_KEYPAIR: str = ""
 
-    # S3 / LocalStack
-    S3_ENDPOINT_URL: str = "http://localstack:4566"
+    # S3 / MinIO
+    S3_ENDPOINT_URL: str = "http://minio:9000"
+    S3_PUBLIC_URL: str = "http://localhost:9000"  # browser-accessible URL for presigned links
     S3_BUCKET: str = "4bid-files"
-    AWS_ACCESS_KEY_ID: str = "test"
-    AWS_SECRET_ACCESS_KEY: str = "test"
+    AWS_ACCESS_KEY_ID: str = "minioadmin"
+    AWS_SECRET_ACCESS_KEY: str = "minioadmin"
     AWS_REGION: str = "us-east-1"
 
 settings = Settings()
