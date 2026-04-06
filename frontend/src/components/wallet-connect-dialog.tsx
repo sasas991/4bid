@@ -29,7 +29,7 @@ export function WalletConnectDialog({
   onOpenChange,
   initialStep = "sign-in",
 }: WalletConnectDialogProps) {
-  const { login, logout, refreshUser } = useAuth();
+  const { login, refreshUser } = useAuth();
   const wallet = useWallet();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -202,18 +202,6 @@ export function WalletConnectDialog({
     }
   };
 
-  const handleDisconnect = async () => {
-    setError("");
-    setLoading(true);
-
-    try {
-      await wallet.disconnect();
-    } finally {
-      logout();
-      resetAndClose(false);
-    }
-  };
-
   if (step === "link-wallet") {
     return (
       <Dialog open={open} onOpenChange={resetAndClose}>
@@ -292,26 +280,6 @@ export function WalletConnectDialog({
           </>
         )}
 
-        {step === "link-wallet" && (
-          <>
-            <DialogHeader>
-              <DialogTitle>Connect Wallet</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Connect your Solflare wallet to complete account setup. It will be linked to your Google account.
-              </p>
-              {wallet.publicKey && (
-                <p className="text-xs text-gray-500 font-mono">{wallet.publicKey.toBase58()}</p>
-              )}
-
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button className="w-full" onClick={handleLinkWallet} disabled={loading}>
-                {loading ? "Connecting..." : "Connect Solflare"}
-              </Button>
-            </div>
-          </>
-        )}
       </DialogContent>
     </Dialog>
   );
