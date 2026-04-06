@@ -139,17 +139,6 @@ export function Navbar() {
                     </span>
                   </Button>
                 </Link>
-                {!user.wallet_address && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-9 gap-1.5 border-amber-400 text-amber-600 hover:bg-amber-50"
-                    onClick={() => setConnectOpen(true)}
-                  >
-                    <WalletIcon className="h-4 w-4" />
-                    <span className="hidden sm:inline">Link Wallet</span>
-                  </Button>
-                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
