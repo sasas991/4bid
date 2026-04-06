@@ -120,6 +120,10 @@ def apply_chain_projection(
 ) -> Auction:
     projection = build_verified_projection(payload)
 
+    # Reject stale sync — only accept projections with a newer slot
+    if auction.last_synced_slot and projection["last_synced_slot"] < auction.last_synced_slot:
+        raise ValueError("Stale sync: projection slot is older than current")
+
     if auction.auction_pubkey and auction.auction_pubkey != projection["auction_pubkey"]:
         raise ValueError("Auction pubkey cannot be remapped")
     if auction.asset_pubkey and auction.asset_pubkey != projection["asset_pubkey"]:

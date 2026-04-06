@@ -2,13 +2,14 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { SearchIcon, WalletIcon, PlusCircleIcon, ZapIcon, LogOutIcon, FlaskConicalIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/context/auth"
 import { WalletConnectDialog } from "@/components/wallet-connect-dialog"
+import { useWallet } from "@solana/wallet-adapter-react"
 import { AXIOS_INSTANCE } from "@/api/axios-instance"
 
 const DEV_AUTH_BYPASS = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true"
@@ -20,7 +21,9 @@ const NAV_LINKS = [
 
 export function Navbar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, isLoading, logout, login } = useAuth()
+  const wallet = useWallet()
   const [connectOpen, setConnectOpen] = React.useState(false)
   const [linkWalletOpen, setLinkWalletOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -136,12 +139,27 @@ export function Navbar() {
                     </span>
                   </Button>
                 </Link>
+                {!user.wallet_address && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9 gap-1.5 border-amber-400 text-amber-600 hover:bg-amber-50"
+                    onClick={() => setConnectOpen(true)}
+                  >
+                    <WalletIcon className="h-4 w-4" />
+                    <span className="hidden sm:inline">Link Wallet</span>
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   className="text-gray-400 hover:text-red-500"
-                  onClick={() => {
-                    if (window.confirm("Выйти из аккаунта?")) logout()
+                  onClick={async () => {
+                    if (window.confirm("Выйти из аккаунта?")) {
+                      try { await wallet.disconnect() } catch {}
+                      logout()
+                      router.push("/")
+                    }
                   }}
                   title="Выйти"
                 >

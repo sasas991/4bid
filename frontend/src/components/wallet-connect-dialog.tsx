@@ -24,6 +24,8 @@ interface WalletConnectDialogProps {
   initialStep?: Step;
 }
 
+type Step = "sign-in" | "link-wallet";
+
 export function WalletConnectDialog({
   open,
   onOpenChange,
@@ -127,23 +129,7 @@ export function WalletConnectDialog({
       await login(access_token);
       resetAndClose(false);
     } catch (err) {
-      if (
-        err &&
-        typeof err === "object" &&
-        "name" in err &&
-        (err as { name?: string }).name === "WalletNotReadyError"
-      ) {
-        setError("Wallet is not ready. Open/unlock the wallet extension and try again.");
-      } else if (
-        err &&
-        typeof err === "object" &&
-        "name" in err &&
-        (err as { name?: string }).name === "WalletConnectionError"
-      ) {
-        setError("Failed to connect wallet. Open Solflare and approve the connection request.");
-      } else {
-        setError(err instanceof Error ? err.message : "Connection failed");
-      }
+      handleWalletError(err);
     } finally {
       setLoading(false);
     }
@@ -220,12 +206,15 @@ export function WalletConnectDialog({
 
   const handleDisconnect = async () => {
     setError("");
+    setLoading(true);
+
     try {
       await wallet.disconnect();
     } finally {
       logout();
       resetAndClose(false);
     }
+    onOpenChange(isOpen);
   };
 
   if (step === "link-wallet") {
@@ -263,50 +252,69 @@ export function WalletConnectDialog({
   return (
     <Dialog open={open} onOpenChange={resetAndClose}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Sign In</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={() => setError("Google sign-in failed")}
-              width="100%"
-              theme="outline"
-              size="large"
-              text="signin_with"
-            />
-          </div>
+        {effectiveStep === "sign-in" && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Sign In</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setError("Google sign-in failed")}
+                  width="100%"
+                  theme="outline"
+                  size="large"
+                  text="signin_with"
+                />
+              </div>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">
+                    or connect wallet
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-600">
+                Critical auction actions are signed and executed on-chain.
+              </p>
+              {wallet.publicKey && (
+                <p className="text-xs text-gray-500 font-mono">{wallet.publicKey.toBase58()}</p>
+              )}
+
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button className="w-full" onClick={handleConnect} disabled={loading}>
+                {loading ? "Connecting..." : "Connect & Sign"}
+              </Button>
             </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">
-                or connect wallet
-              </span>
+          </>
+        )}
+
+        {effectiveStep === "link-wallet" && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Connect Wallet</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Connect your Solflare wallet to complete account setup. It will be linked to your Google account.
+              </p>
+              {wallet.publicKey && (
+                <p className="text-xs text-gray-500 font-mono">{wallet.publicKey.toBase58()}</p>
+              )}
+
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button className="w-full" onClick={handleLinkWallet} disabled={loading}>
+                {loading ? "Connecting..." : "Connect Solflare"}
+              </Button>
             </div>
-          </div>
-
-          <p className="text-sm text-gray-600">
-            Critical auction actions are signed and executed on-chain.
-          </p>
-          {wallet.publicKey && (
-            <p className="text-xs text-gray-500 font-mono">{wallet.publicKey.toBase58()}</p>
-          )}
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {!wallet.connected ? (
-            <Button className="w-full" onClick={handleConnect} disabled={loading}>
-              {loading ? "Connecting..." : "Connect & Sign"}
-            </Button>
-          ) : (
-            <Button className="w-full" variant="outline" onClick={handleDisconnect}>
-              Disconnect
-            </Button>
-          )}
-        </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

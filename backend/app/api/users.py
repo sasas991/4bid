@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import case
 from ..core.database import get_db
 from ..core import security
 from ..models.models import FileRecord, User
@@ -42,8 +43,10 @@ def deposit_funds(
     if request.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
 
-    current_user.balance += request.amount
-
+    # Atomic increment to prevent lost-update race condition
+    db.query(User).filter(User.id == current_user.id).update(
+        {User.balance: User.balance + request.amount}
+    )
     db.flush()
     db.refresh(current_user)
     return current_user
@@ -56,14 +59,21 @@ def withdraw_funds(
 ):
     if request.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
-    
-    if current_user.balance < request.amount:
+
+    # Lock the row to prevent concurrent withdrawal race (double-spend)
+    locked_user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
+    if locked_user.balance < request.amount:
         raise HTTPException(status_code=400, detail="Insufficient balance")
-    
-    # In a real app, we'd trigger a Solana transfer from platform wallet to user wallet
-    # Here we just decrease the internal balance
-    current_user.balance -= request.amount
-    
+
+    # Atomic decrement — UPDATE ... SET balance = balance - amount WHERE balance >= amount
+    rows = db.query(User).filter(
+        User.id == current_user.id,
+        User.balance >= request.amount,
+    ).update({User.balance: User.balance - request.amount})
+
+    if rows == 0:
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+
     db.flush()
     db.refresh(current_user)
     return current_user

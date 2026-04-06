@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import {
@@ -99,8 +99,11 @@ export default function AuctionDetailPage() {
   const [bidAmount, setBidAmount] = useState("")
   const [bidPlaced, setBidPlaced] = useState(false)
   const [bidding, setBidding] = useState(false)
+  const biddingRef = useRef(false)
   const [finishing, setFinishing] = useState(false)
+  const finishingRef = useRef(false)
   const [cancelling, setCancelling] = useState(false)
+  const cancellingRef = useRef(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [error, setError] = useState("")
@@ -157,12 +160,14 @@ export default function AuctionDetailPage() {
   const lotLabel = LOT_LABEL[lotType]
 
   const handleBid = async () => {
+    if (biddingRef.current) return
     const amount = parseFloat(bidAmount)
     if (!amount || amount < minBid) {
       setError(`Minimum bid is ${minBid.toFixed(2)} SOL`)
       return
     }
     setError("")
+    biddingRef.current = true
     setBidding(true)
     try {
       const chainAuction = auction as AuctionDetail & ChainAuctionFields
@@ -200,12 +205,15 @@ export default function AuctionDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bid failed")
     } finally {
+      biddingRef.current = false
       setBidding(false)
     }
   }
 
   const handleFinishAuction = async () => {
+    if (finishingRef.current) return
     setError("")
+    finishingRef.current = true
     setFinishing(true)
     try {
       const chainAuction = auction as AuctionDetail & ChainAuctionFields
@@ -240,12 +248,15 @@ export default function AuctionDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось завершить аукцион")
     } finally {
+      finishingRef.current = false
       setFinishing(false)
     }
   }
 
   const handleCancelBid = async () => {
+    if (cancellingRef.current) return
     setError("")
+    cancellingRef.current = true
     setCancelling(true)
     try {
       const chainAuction = auction as AuctionDetail & ChainAuctionFields
@@ -276,6 +287,7 @@ export default function AuctionDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось отменить ставку")
     } finally {
+      cancellingRef.current = false
       setCancelling(false)
     }
   }
