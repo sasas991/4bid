@@ -105,7 +105,8 @@ def sync_auction_from_chain(
     payload: schemas.AuctionChainSync,
     actor_wallet: Optional[str],
 ):
-    auction = db.query(Auction).filter(Auction.id == auction_id).first()
+    # Lock auction row to prevent concurrent sync races overwriting winner/state
+    auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
     if not auction:
         raise HTTPException(status_code=404, detail="Auction not found")
 
