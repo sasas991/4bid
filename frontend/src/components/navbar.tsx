@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/context/auth"
 import { WalletConnectDialog } from "@/components/wallet-connect-dialog"
+import { useWallet } from "@solana/wallet-adapter-react"
 import { AXIOS_INSTANCE } from "@/api/axios-instance"
 
 const DEV_AUTH_BYPASS = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true"
@@ -22,6 +23,7 @@ export function Navbar() {
   const pathname = usePathname()
   const router = useRouter()
   const { user, isLoading, logout, login } = useAuth()
+  const wallet = useWallet()
   const [connectOpen, setConnectOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
 
@@ -129,8 +131,9 @@ export function Navbar() {
                   variant="ghost"
                   size="icon-sm"
                   className="text-gray-400 hover:text-red-500"
-                  onClick={() => {
+                  onClick={async () => {
                     if (window.confirm("Выйти из аккаунта?")) {
+                      try { await wallet.disconnect() } catch {}
                       logout()
                       router.push("/")
                     }

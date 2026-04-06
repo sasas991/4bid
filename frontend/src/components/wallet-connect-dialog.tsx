@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { GoogleLogin } from "@react-oauth/google";
 import {
   Dialog,
@@ -26,8 +25,7 @@ export function WalletConnectDialog({
   open,
   onOpenChange,
 }: WalletConnectDialogProps) {
-  const router = useRouter();
-  const { login, logout } = useAuth();
+  const { login } = useAuth();
   const wallet = useWallet();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -158,17 +156,6 @@ export function WalletConnectDialog({
     }
   };
 
-  const handleDisconnect = async () => {
-    setError("");
-    try {
-      await wallet.disconnect();
-    } finally {
-      logout();
-      onOpenChange(false);
-      router.push("/");
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -206,15 +193,9 @@ export function WalletConnectDialog({
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
-          {!wallet.connected ? (
-            <Button className="w-full" onClick={handleConnect} disabled={loading}>
-              {loading ? "Connecting..." : "Connect & Sign"}
-            </Button>
-          ) : (
-            <Button className="w-full" variant="outline" onClick={handleDisconnect}>
-              Disconnect
-            </Button>
-          )}
+          <Button className="w-full" onClick={handleConnect} disabled={loading}>
+            {loading ? "Connecting..." : "Connect & Sign"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
