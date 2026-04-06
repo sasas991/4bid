@@ -2,6 +2,7 @@ import json
 from typing import Any, Optional
 
 from solana.rpc.api import Client
+from solana.rpc.commitment import Confirmed
 from solders.signature import Signature
 from ..core.config import settings
 
@@ -42,6 +43,7 @@ def verify_deposit_transaction(
     try:
         response = client.get_transaction(
             Signature.from_string(signature),
+            commitment=Confirmed,
             max_supported_transaction_version=0,
         )
         payload = _resp_to_dict(response)
