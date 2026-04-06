@@ -127,7 +127,7 @@ export function WalletConnectDialog({
       await login(access_token);
       resetAndClose(false);
     } catch (err) {
-      handleWalletError(err);
+      setError(err instanceof Error ? err.message : "Wallet connection failed");
     } finally {
       setLoading(false);
     }

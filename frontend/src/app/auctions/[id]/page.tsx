@@ -35,6 +35,7 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react"
 import {
   cancelAuctionOnChain,
   commitBidOnChain,
+  finalizeAuctionOnChain,
 } from "@/lib/chain/tokenization-client"
 
 const LOT_LABEL: Record<string, string> = {
@@ -51,6 +52,7 @@ type ChainAuctionFields = {
   winner_pubkey?: string
   asset_pubkey?: string
   mint_pubkey?: string
+  chain_status?: string
 }
 
 function getLifecycleSteps(lotType: LotType): LifecycleStep[] {
@@ -101,8 +103,7 @@ export default function AuctionDetailPage() {
   const biddingRef = useRef(false)
   const [finishing, setFinishing] = useState(false)
   const finishingRef = useRef(false)
-  const [cancelling, setCancelling] = useState(false)
-  const cancellingRef = useRef(false)
+  const [cancelling] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [error, setError] = useState("")
@@ -252,43 +253,53 @@ export default function AuctionDetailPage() {
     }
   }
 
-  const handleCancelBid = async () => {
-    if (cancellingRef.current) return
+  const handleFinalizeAuction = async () => {
+    if (finishingRef.current) return
     setError("")
-    cancellingRef.current = true
-    setCancelling(true)
+    finishingRef.current = true
+    setFinishing(true)
     try {
       const chainAuction = auction as AuctionDetail & ChainAuctionFields
-      if (!chainAuction.auction_pubkey || !chainAuction.asset_pubkey || !chainAuction.mint_pubkey || !chainAuction.seller_pubkey) {
-        throw new Error("Auction chain data missing for cancel")
+      if (!chainAuction.auction_pubkey || !chainAuction.seller_pubkey || !chainAuction.winner_pubkey) {
+        throw new Error("Данные аукциона неполны для финализации. Попробуйте обновить страницу.")
+      }
+      const treasury = process.env.NEXT_PUBLIC_PROTOCOL_TREASURY
+      if (!treasury) {
+        throw new Error("Platform treasury is not configured")
       }
 
-      const canceled = await cancelAuctionOnChain({
+      const result = await finalizeAuctionOnChain({
         connection,
         wallet,
         auctionPubkey: chainAuction.auction_pubkey,
-        assetPubkey: chainAuction.asset_pubkey,
-        mintPubkey: chainAuction.mint_pubkey,
         sellerPubkey: chainAuction.seller_pubkey,
+        treasuryPubkey: treasury,
+        winnerPubkey: chainAuction.winner_pubkey,
       })
 
       await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/chain/sync`, {
         auction_pubkey: chainAuction.auction_pubkey,
         seller_pubkey: chainAuction.seller_pubkey,
         winner_pubkey: chainAuction.winner_pubkey,
-        chain_status: "cancelled",
-        cancel_signature: canceled.signature,
+        chain_status: "finalized",
+        finalize_signature: result.signature,
         last_synced_slot: await connection.getSlot("confirmed"),
       })
 
       const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
       setAuction(updated)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось отменить ставку")
+      setError(err instanceof Error ? err.message : "Не удалось финализировать аукцион")
     } finally {
-      cancellingRef.current = false
-      setCancelling(false)
+      finishingRef.current = false
+      setFinishing(false)
     }
+  }
+
+  const handleCancelBid = async () => {
+    // On-chain commit-reveal auctions do not support cancelling individual bids.
+    // Committed SOL is refunded automatically after the auction is finalized or cancelled.
+    setError("Ставку нельзя отменить — средства будут возвращены автоматически после завершения аукциона (refund).")
   }
 
   const handleStatusUpdate = async () => {
@@ -459,7 +470,17 @@ export default function AuctionDetailPage() {
                         onClick={handleFinishAuction}
                         disabled={finishing}
                       >
-                        {finishing ? "Завершаем..." : "Завершить досрочно"}
+                        {finishing ? "Отменяем..." : "Отменить аукцион"}
+                      </Button>
+                    )}
+                    {(auction as AuctionDetail & ChainAuctionFields).chain_status === "ready_to_finalize" && (
+                      <Button
+                        className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
+                        onClick={handleFinalizeAuction}
+                        disabled={finishing}
+                      >
+                        <GavelIcon className="mr-2 h-4 w-4" />
+                        {finishing ? "Финализируем..." : "Финализировать аукцион"}
                       </Button>
                     )}
                     {auction.status === AuctionStatus.paid && lotType !== LotType.information && (

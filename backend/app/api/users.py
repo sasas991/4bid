@@ -5,6 +5,8 @@ from ..core.database import get_db
 from ..core import security
 from ..models.models import FileRecord, User
 from ..schemas import schemas
+from ..services.auth import verify_solana_signature
+from ..services.solana import verify_deposit_transaction
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -43,9 +45,21 @@ def deposit_funds(
     if request.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
 
+    # Verify the on-chain transaction actually transferred the claimed amount
+    verified_amount = verify_deposit_transaction(
+        signature=request.signature,
+        expected_sender=current_user.wallet_address,
+        expected_amount_sol=request.amount,
+    )
+    if verified_amount is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not verify deposit transaction on-chain",
+        )
+
     # Atomic increment to prevent lost-update race condition
     db.query(User).filter(User.id == current_user.id).update(
-        {User.balance: User.balance + request.amount}
+        {User.balance: User.balance + verified_amount}
     )
     db.flush()
     db.refresh(current_user)
@@ -59,6 +73,14 @@ def withdraw_funds(
 ):
     if request.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
+
+    if not current_user.wallet_address:
+        raise HTTPException(status_code=400, detail="No wallet linked to this account")
+
+    # Verify the wallet owner actually signed a message authorizing this exact amount
+    expected_message = f"Withdraw {request.amount} SOL from 4bid"
+    if not verify_solana_signature(current_user.wallet_address, request.signature, expected_message):
+        raise HTTPException(status_code=403, detail="Invalid withdrawal signature")
 
     # Lock the row to prevent concurrent withdrawal race (double-spend)
     locked_user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
