@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { GoogleLogin } from "@react-oauth/google";
 import {
   Dialog,
@@ -25,6 +26,7 @@ export function WalletConnectDialog({
   open,
   onOpenChange,
 }: WalletConnectDialogProps) {
+  const router = useRouter();
   const { login, logout } = useAuth();
   const wallet = useWallet();
   const [error, setError] = useState("");
@@ -163,6 +165,7 @@ export function WalletConnectDialog({
     } finally {
       logout();
       onOpenChange(false);
+      router.push("/");
     }
   };
 

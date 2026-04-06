@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { SearchIcon, WalletIcon, PlusCircleIcon, ZapIcon, LogOutIcon, FlaskConicalIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,6 +20,7 @@ const NAV_LINKS = [
 
 export function Navbar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, isLoading, logout, login } = useAuth()
   const [connectOpen, setConnectOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -129,7 +130,10 @@ export function Navbar() {
                   size="icon-sm"
                   className="text-gray-400 hover:text-red-500"
                   onClick={() => {
-                    if (window.confirm("Выйти из аккаунта?")) logout()
+                    if (window.confirm("Выйти из аккаунта?")) {
+                      logout()
+                      router.push("/")
+                    }
                   }}
                   title="Выйти"
                 >
