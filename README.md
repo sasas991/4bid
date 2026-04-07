@@ -19,6 +19,27 @@ Core goals:
 - transparent lifecycle: create -> bid -> finalize -> settle/refund
 - wallet-first user flow for signing and ownership
 
+## Tokenization Model
+
+4bid is tokenization-first:
+- every listing is represented as a structured tokenized lot record
+- tokenized metadata links listing identity, auction params, and settlement context
+- lot categories (physical, service, knowledge, digital) are normalized into one auction pipeline
+
+This gives one consistent contract flow for very different real-world assets.
+
+## Smart Contract Authority (On-chain First)
+
+Auction truth is on-chain, not in frontend state and not in backend cache.
+
+Program-governed operations:
+- auction initialization and core state transitions
+- bid lifecycle rules
+- finalize/cancel constraints
+- settlement/refund logic
+
+Backend mirrors chain state for UX/performance, but contract rules define valid outcomes.
+
 ## Product Scope
 
 Supported lot categories:
@@ -52,6 +73,25 @@ Trust boundary:
 - On-chain program: source of truth for critical auction logic
 - Backend: read model/projection, integrations, API orchestration
 - Frontend: transaction preparation + wallet signatures + UX
+
+## Component Roles
+
+### Frontend (`frontend/`)
+- wallet connection and user interactions
+- builds and submits transaction intents
+- renders live auction and profile views from API data
+- never acts as source of truth for auction finality
+
+### Backend (`backend/`)
+- authentication/session APIs
+- auction/query endpoints and projection reads
+- validates and synchronizes chain-related state for the web app
+- stores off-chain metadata and indexes in PostgreSQL
+
+### Smart Contract (`contracts/tokenization-contract/`)
+- enforces auction invariants and settlement constraints
+- owns critical auction state transitions
+- provides deterministic on-chain execution path for bids/finalization/refunds
 
 ## Tech Stack
 
