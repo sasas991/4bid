@@ -28,7 +28,8 @@ import { AuctionStatus, LotType } from "@/api/generated"
 import { api } from "@/api/client"
 import { useAuth } from "@/context/auth"
 import { cn } from "@/lib/utils"
-import { formatDateTimeRu, formatTimeLeftRu } from "@/lib/date"
+import { formatDateTimeRu, formatTimeLeftRu, getDeadlineMs, formatCountdown } from "@/lib/date"
+import { resolveFileUrl } from "@/lib/files"
 import { AXIOS_INSTANCE } from "@/api/axios-instance"
 
 const LOT_LABEL: Record<string, string> = {
@@ -96,6 +97,7 @@ export default function AuctionDetailPage() {
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [error, setError] = useState("")
+  const [countdownMs, setCountdownMs] = useState<number | null>(null)
 
   const auctionId = Number(params.id)
 
@@ -106,6 +108,24 @@ export default function AuctionDetailPage() {
       .catch(() => router.push("/auctions"))
       .finally(() => setLoading(false))
   }, [auctionId, router])
+
+  // Live countdown timer — ticks every second when less than 1 hour remains
+  useEffect(() => {
+    if (!auction) return
+    const remaining = getDeadlineMs(auction.deadline)
+    // Only start live countdown when less than 1 hour
+    if (remaining <= 0 || remaining > 3600_000) {
+      setCountdownMs(null)
+      return
+    }
+    setCountdownMs(remaining)
+    const interval = setInterval(() => {
+      const ms = getDeadlineMs(auction.deadline)
+      setCountdownMs(ms)
+      if (ms <= 0) clearInterval(interval)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [auction])
 
   if (loading) {
     return (
@@ -131,7 +151,12 @@ export default function AuctionDetailPage() {
     )
   }
 
-  const { label: timeLabel, urgent } = formatTimeLeftRu(auction.deadline)
+  const staticTime = formatTimeLeftRu(auction.deadline)
+  // Use live countdown when available (< 1 hour), otherwise static label
+  const liveTime = countdownMs !== null ? formatCountdown(countdownMs) : null
+  const timeLabel = liveTime ? liveTime.label : staticTime.label
+  const urgent = liveTime ? liveTime.urgent : staticTime.urgent
+  const imageUrl = resolveFileUrl(auction.image_file, auction.image_url)
   const bids = [...(auction.bids ?? [])].sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   )
@@ -150,6 +175,7 @@ export default function AuctionDetailPage() {
   const biddingClosed = !isActive || parseBackendUtc(auction.deadline).getTime() <= Date.now() || chainBiddingClosed
   const lotType = auction.lot_type ?? LotType.physical_item
   const canFinalizeNow = Date.now() >= parseBackendUtc(auction.deadline).getTime() + 60_000
+  const isLiveCountdown = countdownMs !== null && countdownMs > 0
   const timeDisplayLabel = isActive && chainBiddingClosed ? "Торги на блокчейне завершены" : timeLabel
   const chainStatusHint =
     isActive && !isCommitPhase && chainStatus
@@ -335,6 +361,16 @@ export default function AuctionDetailPage() {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-6">
+            {imageUrl && (
+              <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
+                <img
+                  src={imageUrl}
+                  alt={auction.title}
+                  className="w-full max-h-[28rem] object-cover"
+                />
+              </div>
+            )}
+
             <div>
               <h1 className="text-2xl font-bold text-gray-900 mb-2">{auction.title}</h1>
               <div className="flex flex-wrap gap-3 text-sm text-gray-500 mb-4">
@@ -342,7 +378,7 @@ export default function AuctionDetailPage() {
                   <GavelIcon className="h-4 w-4" />
                   {bids.length} bid{bids.length !== 1 ? "s" : ""}
                 </span>
-                <span className={cn("flex items-center gap-1", urgent && "text-red-600 font-medium")}>
+                <span className={cn("flex items-center gap-1", urgent && "text-red-600 font-medium", isLiveCountdown && "tabular-nums")}>
                   <ClockIcon className="h-4 w-4" />
                   {timeLabel}
                 </span>
@@ -450,7 +486,9 @@ export default function AuctionDetailPage() {
                     ? "bg-amber-50 text-amber-700"
                     : urgent
                       ? "bg-red-50 text-red-700"
-                      : "bg-blue-50 text-[#3665F3]"
+                      : "bg-blue-50 text-[#3665F3]",
+                  isLiveCountdown && "tabular-nums",
+                  isLiveCountdown && urgent && "animate-pulse"
                 )}>
                   <ClockIcon className="h-4 w-4" />
                   {timeDisplayLabel}
@@ -522,14 +560,38 @@ export default function AuctionDetailPage() {
                       </p>
                     </div>
                     {auction.status === AuctionStatus.finished && (
-                      <Button
-                        className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
-                        onClick={handleStatusUpdate}
-                        disabled={statusUpdating}
-                      >
-                        <WalletIcon className="mr-2 h-4 w-4" />
-                        {statusUpdating ? "Оплачиваем..." : `Оплатить ${auction.current_price.toFixed(4)} SOL`}
-                      </Button>
+                      <>
+                        <Button
+                          className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
+                          onClick={handleStatusUpdate}
+                          disabled={statusUpdating}
+                        >
+                          <WalletIcon className="mr-2 h-4 w-4" />
+                          {statusUpdating ? "Оплачиваем..." : `Оплатить ${auction.current_price.toFixed(4)} SOL`}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="w-full text-red-600 border-red-200 hover:bg-red-50"
+                          onClick={async () => {
+                            if (!window.confirm("Вы уверены? Вы потеряете право на покупку.")) return
+                            setStatusUpdating(true)
+                            setError("")
+                            try {
+                              await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/decline-payment`)
+                              const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
+                              setAuction(updated)
+                            } catch (err: any) {
+                              setError(err?.response?.data?.detail || "Ошибка")
+                            } finally {
+                              setStatusUpdating(false)
+                            }
+                          }}
+                          disabled={statusUpdating}
+                        >
+                          <XCircleIcon className="mr-2 h-4 w-4" />
+                          Отказаться от оплаты
+                        </Button>
+                      </>
                     )}
                     {auction.status === AuctionStatus.paid && (
                       <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-700 font-medium text-center">

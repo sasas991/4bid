@@ -241,6 +241,23 @@ def finalize_auction(db: Session, auction_id: int, user_id: int):
     return auction
 
 
+def decline_payment(db: Session, auction_id: int, user_id: int):
+    """Winner declines to pay — auction goes back to cancelled, no money moves."""
+    auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
+    if not auction:
+        raise HTTPException(status_code=404, detail="Auction not found")
+    if auction.status != AuctionStatus.FINISHED:
+        raise HTTPException(status_code=400, detail="Auction is not awaiting payment")
+    if auction.winner_id != user_id:
+        raise HTTPException(status_code=403, detail="Only the winner can decline payment")
+
+    auction.status = AuctionStatus.CANCELLED
+    auction.winner_id = None
+    db.flush()
+    db.refresh(auction)
+    return auction
+
+
 def cancel_bid(db: Session, auction_id: int, user_id: int):
     auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
     if not auction:

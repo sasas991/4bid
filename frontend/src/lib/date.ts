@@ -34,3 +34,35 @@ export function formatTimeLeftRu(deadline: string): { label: string; urgent: boo
   if (hours > 0) return { label: `${hours}ч ${minutes}м`, urgent: hours < 2 }
   return { label: `${minutes}м`, urgent: true }
 }
+
+/** Returns milliseconds remaining until deadline (0 if expired). */
+export function getDeadlineMs(deadline: string): number {
+  return Math.max(0, parseUTC(deadline).getTime() - Date.now())
+}
+
+/**
+ * Format a countdown from remaining milliseconds.
+ * - >= 1 hour: HH:MM:SS
+ * - >= 1 minute: MM:SS
+ * - < 1 minute: 0:SS
+ * - expired: "Завершён"
+ */
+export function formatCountdown(ms: number): { label: string; urgent: boolean; expired: boolean } {
+  if (ms <= 0) return { label: "Завершён", urgent: true, expired: true }
+
+  const totalSeconds = Math.floor(ms / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  const pad = (n: number) => String(n).padStart(2, "0")
+
+  if (hours > 0) {
+    return { label: `${hours}:${pad(minutes)}:${pad(seconds)}`, urgent: false, expired: false }
+  }
+  return {
+    label: `${minutes}:${pad(seconds)}`,
+    urgent: minutes < 1,
+    expired: false,
+  }
+}

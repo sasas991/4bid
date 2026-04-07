@@ -163,6 +163,14 @@ def pay_auction(
 ):
     return auction_service.pay_auction(db, auction_id, current_user.id)
 
+@router.post("/{auction_id}/decline-payment", response_model=schemas.Auction)
+def decline_payment(
+    auction_id: int,
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+):
+    return auction_service.decline_payment(db, auction_id, current_user.id)
+
 @router.post("/{auction_id}/ship", response_model=schemas.Auction)
 def ship_auction(
     auction_id: int,
