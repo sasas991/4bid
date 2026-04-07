@@ -138,6 +138,7 @@ export default function AuctionDetailPage() {
   const hasBid = !!(user && auction.bids?.some((b) => b.user_id === user.id))
   const isActive = auction.status === AuctionStatus.active
   const lotType = auction.lot_type ?? LotType.physical_item
+  const canFinalizeNow = Date.now() >= new Date(auction.deadline).getTime() + 60_000
   const lifecycleSteps = getLifecycleSteps(lotType)
   const currentStep = lifecycleIndex(lifecycleSteps, auction.status)
   const lotLabel = LOT_LABEL[lotType]
@@ -204,7 +205,17 @@ export default function AuctionDetailPage() {
       setAuction(updated)
     } catch (err: any) {
       const detail = err?.response?.data?.detail
-      setError(detail || (err instanceof Error ? err.message : "Не удалось финализировать аукцион"))
+      const detailText = typeof detail === "string" ? detail : ""
+      const waitMatch = detailText.match(/Wait until reveal phase ends in (\d+) seconds/i)
+      if (waitMatch) {
+        const secondsLeft = Number(waitMatch[1])
+        const hours = Math.floor(secondsLeft / 3600)
+        const minutes = Math.ceil((secondsLeft % 3600) / 60)
+        const waitLabel = hours > 0 ? `${hours} ч ${minutes} мин` : `${Math.ceil(secondsLeft / 60)} мин`
+        setError(`Финализация пока недоступна: этап раскрытия ставок ещё идёт. Повторите через ${waitLabel}.`)
+      } else {
+        setError(detail || (err instanceof Error ? err.message : "Не удалось финализировать аукцион"))
+      }
     } finally {
       finishingRef.current = false
       setFinishing(false)

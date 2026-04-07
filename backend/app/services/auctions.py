@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..models.models import Auction, AuctionStatus, Bid, FileRecord, LotType, User
 from ..schemas import schemas
-from .anchor_client import anchor_chain_client, TREASURY_ADDRESS
+from .anchor_client import (
+    AUCTION_STATUS_CANCELLED,
+    AUCTION_STATUS_FINALIZED,
+    DEFAULT_PUBKEY,
+    TREASURY_ADDRESS,
+    anchor_chain_client,
+)
 from .auction_chain_service import apply_chain_projection
 
 logger = logging.getLogger(__name__)
@@ -192,6 +198,29 @@ def finalize_auction(db: Session, auction_id: int, user_id: int):
         raise HTTPException(status_code=403, detail="Only the auction owner can finalize")
     if not auction.auction_pubkey or not auction.seller_pubkey:
         raise HTTPException(status_code=400, detail="Auction is missing on-chain data")
+
+    try:
+        decoded = anchor_chain_client.get_decoded_auction(auction.auction_pubkey)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to read on-chain auction state: {exc}") from exc
+
+    if decoded.status_code == AUCTION_STATUS_CANCELLED:
+        raise HTTPException(status_code=400, detail="Auction is already cancelled on-chain")
+    if decoded.status_code == AUCTION_STATUS_FINALIZED:
+        raise HTTPException(status_code=400, detail="Auction is already finalized on-chain")
+
+    # Finalize can succeed only after reveal phase, when winner state exists on-chain.
+    solana_now = anchor_chain_client.get_block_time()
+    if solana_now < decoded.reveal_end_ts:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Auction is not ready for finalize yet. Wait until reveal phase ends in {decoded.reveal_end_ts - solana_now} seconds.",
+        )
+    if decoded.highest_bidder_pubkey == DEFAULT_PUBKEY or decoded.highest_revealed_bid_lamports <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No revealed winning bid on-chain yet, finalize is unavailable.",
+        )
 
     treasury = TREASURY_ADDRESS
 

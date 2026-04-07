@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from ..core.database import get_db
 from ..core import security
-from ..models.models import Auction, User, Bid, AuctionStatus
+from ..models.models import Auction, User, Bid, AuctionStatus, LotType
 from ..schemas import schemas
 from ..services import auctions as auction_service
 from ..services.anchor_client import anchor_chain_client
@@ -105,10 +105,17 @@ def get_auction(
     auction = auction_service.get_auction_detail(db, auction_id, user_id)
 
     visible_hidden: Optional[str] = auction.hidden_content
-    if auction.winner_id != user_id and auction.owner_id != user_id:
+    is_owner = auction.owner_id == user_id
+    is_winner = auction.winner_id == user_id
+    is_info_lot = auction.lot_type == LotType.INFORMATION
+
+    if not is_owner and not is_winner:
         visible_hidden = None
+    # For information lots, winner should get access right after successful payment.
+    elif is_info_lot and is_winner and auction.status == AuctionStatus.PAID:
+        visible_hidden = auction.hidden_content
     elif (auction.chain_status or "") not in ["finalized", "settled"]:
-        if auction.owner_id != user_id:
+        if not is_owner:
             visible_hidden = None
 
     detail = schemas.AuctionDetail.model_validate(auction, from_attributes=True)
