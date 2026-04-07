@@ -37,38 +37,33 @@ def create_auction(
             detail=f"Insufficient balance for on-chain rent. Need at least {RENT_COST_SOL} SOL, have {current_user.balance:.4f} SOL.",
         )
 
-    db_auction = auction_service.create_auction(db, auction, current_user.id)
-
-    # Use server time but subtract the Solana clock lag so start_ts is
-    # already in the past for Solana by the time bids arrive.
-    # create_auction on-chain checks start_ts >= solana_now, so we use
-    # solana_now directly with a tiny buffer for tx propagation.
-    # Compute deadline in seconds from now (Solana-clock-relative)
-    deadline_ts = int(db_auction.deadline.timestamp())
-    commit_duration = max(deadline_ts - int(time.time()), 60)  # at least 60s
+    # First create on-chain, only then persist to DB
+    from datetime import timezone as _tz
+    deadline = auction.deadline
+    if deadline.tzinfo is not None:
+        deadline = deadline.astimezone(_tz.utc).replace(tzinfo=None)
+    deadline_ts = int(deadline.timestamp())
+    commit_duration = max(deadline_ts - int(time.time()), 60)
     min_bid_lamports = int(math.floor(auction.starting_price * 1_000_000_000))
 
     try:
         result = anchor_chain_client.create_auction_on_chain(
             title=auction.title,
-            metadata_uri=auction.image_url or f"ipfs://4bid/{db_auction.id}",
-            real_world_ref=f"auction:{db_auction.id}",
+            metadata_uri=auction.image_url or f"ipfs://4bid/new",
+            real_world_ref=f"auction:new",
             min_bid_lamports=min_bid_lamports,
             commit_duration_secs=commit_duration,
             reveal_duration_secs=60,
         )
     except Exception as exc:
-        logger.exception("On-chain auction creation failed for auction %s", db_auction.id)
-        # Mark the DB auction as failed but keep it for retry
-        db_auction.chain_status = "chain_failed"
-        db.flush()
-        db.refresh(db_auction)
+        logger.exception("On-chain auction creation failed")
         raise HTTPException(
             status_code=502,
-            detail=f"On-chain creation failed: {exc}. Auction #{db_auction.id} saved as draft.",
+            detail=f"On-chain creation failed: {exc}",
         ) from exc
 
-    # Update the DB auction with chain data
+    # On-chain succeeded — now create DB record
+    db_auction = auction_service.create_auction(db, auction, current_user.id)
     db_auction.auction_pubkey = result.auction_pubkey
     db_auction.asset_pubkey = result.asset_pubkey
     db_auction.mint_pubkey = result.mint_pubkey

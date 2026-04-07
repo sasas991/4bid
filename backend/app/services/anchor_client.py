@@ -302,8 +302,28 @@ class AnchorChainClient:
         if not sig:
             raise ValueError(f"No signature returned from RPC: {resp_dict}")
 
-        # Wait for confirmation before returning
-        self.client.confirm_transaction(Signature.from_string(sig), commitment=Confirmed)
+        # Wait for confirmation and verify success
+        sig_obj = Signature.from_string(sig)
+        confirm_resp = self.client.confirm_transaction(sig_obj, commitment=Confirmed)
+        confirm_dict = self._resp_to_dict(confirm_resp)
+        # Check if the transaction had an error
+        statuses = (confirm_dict.get("result", {}) or {}).get("value", []) or []
+        for status in (statuses if isinstance(statuses, list) else [statuses]):
+            if status and isinstance(status, dict) and status.get("err"):
+                raise ValueError(f"Transaction confirmed but failed: {status['err']}")
+
+        # Poll until account changes are visible (devnet propagation delay)
+        for _ in range(10):
+            tx_resp = self.client.get_transaction(sig_obj, max_supported_transaction_version=0)
+            tx_dict = self._resp_to_dict(tx_resp)
+            tx_result = tx_dict.get("result")
+            if tx_result is not None:
+                meta = (tx_result.get("meta") or {})
+                if meta.get("err"):
+                    raise ValueError(f"Transaction failed on-chain: {meta['err']}")
+                break
+            time.sleep(1)
+
         return sig
 
     def create_auction_on_chain(
