@@ -1,6 +1,9 @@
 import Axios, { AxiosRequestConfig } from "axios";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const isServer = typeof window === "undefined";
+const BASE_URL = isServer
+  ? (process.env.INTERNAL_API_URL ?? "http://backend:8000")
+  : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
 
 export const AXIOS_INSTANCE = Axios.create({
   baseURL: BASE_URL,
