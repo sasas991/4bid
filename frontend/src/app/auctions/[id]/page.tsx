@@ -137,6 +137,7 @@ export default function AuctionDetailPage() {
   const isLeadingBidder = !!(user && highestBid && highestBid.user_id === user.id)
   const hasBid = !!(user && auction.bids?.some((b) => b.user_id === user.id))
   const isActive = auction.status === AuctionStatus.active
+  const biddingClosed = !isActive || new Date(auction.deadline).getTime() <= Date.now()
   const lotType = auction.lot_type ?? LotType.physical_item
   const canFinalizeNow = Date.now() >= new Date(auction.deadline).getTime() + 60_000
   const lifecycleSteps = getLifecycleSteps(lotType)
@@ -145,6 +146,10 @@ export default function AuctionDetailPage() {
 
   const handleBid = async () => {
     if (biddingRef.current) return
+    if (biddingClosed) {
+      setError("Auction is already ended")
+      return
+    }
     const amount = parseFloat(bidAmount)
     if (!amount || amount < minBid) {
       setError(`Minimum bid is ${minBid.toFixed(4)} SOL`)
@@ -534,7 +539,7 @@ export default function AuctionDetailPage() {
                       </p>
                     )}
                   </div>
-                ) : !isActive ? (
+                ) : biddingClosed ? (
                   <p className="text-center text-sm text-gray-500 py-4">
                     {auction.status === AuctionStatus.cancelled ? "Аукцион отменён" : "Аукцион завершён"}
                   </p>

@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { Auction } from "@/api/generated"
-import { LotType } from "@/api/generated"
+import { AuctionStatus, LotType } from "@/api/generated"
 import { cn } from "@/lib/utils"
 import { formatTimeLeftRu } from "@/lib/date"
 import { resolveFileUrl } from "@/lib/files"
@@ -27,6 +27,9 @@ export function AuctionCard({ auction, className }: AuctionCardProps) {
   const { label: timeLabel, urgent } = formatTimeLeftRu(auction.deadline)
   const style = LOT_STYLE[auction.lot_type ?? LotType.physical_item]
   const imageUrl = resolveFileUrl(auction.image_file, auction.image_url)
+  const isEnded =
+    auction.status !== AuctionStatus.active ||
+    new Date(auction.deadline).getTime() <= Date.now()
 
   return (
     <Link href={`/auctions/${auction.id}`}>
@@ -77,10 +80,12 @@ export function AuctionCard({ auction, className }: AuctionCardProps) {
             className="mt-3 w-full h-8 bg-[#3665F3] text-xs hover:bg-[#2952d4]"
             onClick={(e) => {
               e.preventDefault()
+              if (isEnded) return
               window.location.href = `/auctions/${auction.id}`
             }}
+            disabled={isEnded}
           >
-            Place Bid
+            {isEnded ? "Auction Ended" : "Place Bid"}
           </Button>
         </CardContent>
       </Card>
