@@ -61,7 +61,7 @@ export default function HomePage() {
           </h1>
           <p className="mx-auto mb-8 max-w-2xl text-lg text-blue-100">
             The first decentralized auction platform on Solana. Connect your wallet, place
-            cryptographically-signed bids, and settle in SOL — no banks, no accounts, no middlemen.
+            cryptographically-signed bids, and settle in SOL — no banks, no middlemen.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link href="/auctions">
