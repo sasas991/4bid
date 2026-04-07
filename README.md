@@ -184,7 +184,3 @@ This means metadata create succeeded, but chain tx failed. Check:
 Contract-specific instructions:
 
 - [contracts/tokenization-contract/README.md](contracts/tokenization-contract/README.md)
-
-## License
-
-See [LICENSE](LICENSE).
