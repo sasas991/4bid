@@ -57,7 +57,7 @@ export function AuctionCard({ auction, className }: AuctionCardProps) {
           <div className="mb-3 flex items-baseline gap-1">
             <span className="text-xs text-gray-500">Current bid</span>
             <span className="ml-auto text-lg font-bold text-gray-900">
-              {auction.current_price.toFixed(2)}
+              {auction.current_price.toFixed(4)}
               <span className="ml-1 text-sm font-semibold text-[#9945FF]">SOL</span>
             </span>
           </div>

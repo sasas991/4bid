@@ -3,8 +3,9 @@
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import { PublicKey, Keypair, SystemProgram, Connection, Signer } from "@solana/web3.js";
 import type { WalletContextState } from "@solana/wallet-adapter-react";
+import idlJson from "./tokenization_contract.json";
 
-const PROGRAM_ID = new PublicKey("BLt6gcTzkeyZ5ygxem5AZSFQ3TyanAzkmRVDnyRNHHC2");
+const PROGRAM_ID = new PublicKey("2KQUuKgA5QXLgUdzRDCDEM1kgAfRnKucgAp6N38iihYa");
 
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
@@ -24,23 +25,7 @@ type ProgramMethodBuilder = {
 
 type ProgramMethods = Record<string, (...args: unknown[]) => ProgramMethodBuilder>;
 
-const idl: unknown = {
-  address: PROGRAM_ID.toBase58(),
-  metadata: { name: "tokenization_contract", version: "0.1.0", spec: "0.1.0" },
-  instructions: [
-    { name: "initializeProtocol", discriminator: [0, 0, 0, 0, 0, 0, 0, 0], accounts: [], args: [{ name: "feeBps", type: "u16" }] },
-    { name: "createAsset", discriminator: [0, 0, 0, 0, 0, 0, 0, 0], accounts: [], args: [{ name: "params", type: { defined: { name: "CreateAssetParams" } } }] },
-    { name: "createAuction", discriminator: [0, 0, 0, 0, 0, 0, 0, 0], accounts: [], args: [{ name: "params", type: { defined: { name: "CreateAuctionParams" } } }] },
-    { name: "commitBid", discriminator: [0, 0, 0, 0, 0, 0, 0, 0], accounts: [], args: [{ name: "params", type: { defined: { name: "CommitBidParams" } } }] },
-    { name: "revealBid", discriminator: [0, 0, 0, 0, 0, 0, 0, 0], accounts: [], args: [{ name: "params", type: { defined: { name: "RevealBidParams" } } }] },
-    { name: "finalizeAuctionState", discriminator: [0, 0, 0, 0, 0, 0, 0, 0], accounts: [], args: [] },
-    { name: "settleWinnerAssetAndFunds", discriminator: [0, 0, 0, 0, 0, 0, 0, 0], accounts: [], args: [] },
-    { name: "refundLoser", discriminator: [0, 0, 0, 0, 0, 0, 0, 0], accounts: [], args: [] },
-    { name: "cancelAuction", discriminator: [0, 0, 0, 0, 0, 0, 0, 0], accounts: [], args: [] },
-  ],
-  accounts: [],
-  types: [],
-};
+const idl: unknown = idlJson;
 
 function deriveAta(owner: PublicKey, mint: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
@@ -111,7 +96,7 @@ function getProgram(connection: Connection, wallet: WalletContextState) {
     wallet as unknown as Parameters<typeof AnchorProvider>[1],
     { commitment: "confirmed" },
   );
-  return new Program(idl as never, PROGRAM_ID, provider);
+  return new Program(idl as never, provider);
 }
 
 export async function createAuctionOnChain(params: {
@@ -155,32 +140,13 @@ export async function createAuctionOnChain(params: {
       decimals: 0,
     })
     .accounts({
-      protocol: protocolPda,
-      creator: wallet.publicKey,
-      asset: assetPda,
       mint: mint.publicKey,
-      creatorTokenAccount: creatorAta,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
     })
     .signers?.([mint as Signer])?.rpc();
 
   if (!createAssetSig) {
     throw new Error("Failed to create asset transaction");
   }
-
-  const [auctionPda] = PublicKey.findProgramAddressSync(
-    [AUCTION_SEED, assetPda.toBuffer(), u64Le(nextAuctionId)],
-    PROGRAM_ID,
-  );
-  const [vaultAuthorityPda] = PublicKey.findProgramAddressSync(
-    [VAULT_AUTHORITY_SEED, auctionPda.toBuffer()],
-    PROGRAM_ID,
-  );
-
-  const sellerAssetTokenAccount = deriveAta(wallet.publicKey, mint.publicKey);
-  const vaultAssetTokenAccount = deriveAta(vaultAuthorityPda, mint.publicKey);
 
   const now = Math.floor(Date.now() / 1000);
   const startTs = new BN(now + 10);
@@ -196,19 +162,15 @@ export async function createAuctionOnChain(params: {
       minBidLamports: params.minBidLamports,
     })
     .accounts({
-      protocol: protocolPda,
-      seller: wallet.publicKey,
       asset: assetPda,
-      mint: mint.publicKey,
-      auction: auctionPda,
-      vaultAuthority: vaultAuthorityPda,
-      sellerAssetTokenAccount,
-      vaultAssetTokenAccount,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
     })
     .rpc();
+
+  // Re-derive PDAs after successful transactions (must match on-chain seeds)
+  const [auctionPda] = PublicKey.findProgramAddressSync(
+    [AUCTION_SEED, assetPda.toBuffer(), u64Le(nextAuctionId)],
+    PROGRAM_ID,
+  );
 
   return {
     createAssetSig,

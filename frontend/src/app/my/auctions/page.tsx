@@ -88,7 +88,7 @@ export default function MyAuctionsPage() {
                     <span className="font-medium text-gray-900">Auction #{bid.auction_id}</span>
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-gray-900">
-                        {bid.amount.toFixed(2)}{" "}
+                        {bid.amount.toFixed(4)}{" "}
                         <span className="text-[#9945FF] font-semibold">SOL</span>
                       </span>
                       <span className="text-xs text-gray-400">

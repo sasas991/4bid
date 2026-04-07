@@ -30,13 +30,6 @@ import { useAuth } from "@/context/auth"
 import { cn } from "@/lib/utils"
 import { formatDateTimeRu, formatTimeLeftRu } from "@/lib/date"
 import { AXIOS_INSTANCE } from "@/api/axios-instance"
-import { BN } from "@coral-xyz/anchor"
-import { useConnection, useWallet } from "@solana/wallet-adapter-react"
-import {
-  cancelAuctionOnChain,
-  commitBidOnChain,
-  finalizeAuctionOnChain,
-} from "@/lib/chain/tokenization-client"
 
 const LOT_LABEL: Record<string, string> = {
   [LotType.physical_item]: "Physical",
@@ -46,15 +39,6 @@ const LOT_LABEL: Record<string, string> = {
 }
 
 type LifecycleStep = { icon: React.ReactNode; label: string; status: AuctionStatus[] }
-type ChainAuctionFields = {
-  auction_pubkey?: string
-  seller_pubkey?: string
-  winner_pubkey?: string
-  asset_pubkey?: string
-  mint_pubkey?: string
-  chain_status?: string
-}
-
 function getLifecycleSteps(lotType: LotType): LifecycleStep[] {
   const base: LifecycleStep[] = [
     { icon: <GavelIcon className="h-4 w-4" />, label: "Bidding", status: [AuctionStatus.active] },
@@ -93,8 +77,6 @@ export default function AuctionDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { user } = useAuth()
-  const { connection } = useConnection()
-  const wallet = useWallet()
   const [auction, setAuction] = useState<AuctionDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [bidAmount, setBidAmount] = useState("")
@@ -146,7 +128,7 @@ export default function AuctionDetailPage() {
   const bids = [...(auction.bids ?? [])].sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   )
-  const minBid = auction.current_price + 0.01
+  const minBid = auction.current_price + 0.0001
   const isOwner = user && user.id === auction.owner_id
   const isWinner = user && user.id === auction.winner_id
   const highestBid = auction.bids?.length
@@ -163,38 +145,17 @@ export default function AuctionDetailPage() {
     if (biddingRef.current) return
     const amount = parseFloat(bidAmount)
     if (!amount || amount < minBid) {
-      setError(`Minimum bid is ${minBid.toFixed(2)} SOL`)
+      setError(`Minimum bid is ${minBid.toFixed(4)} SOL`)
       return
     }
     setError("")
     biddingRef.current = true
     setBidding(true)
     try {
-      const chainAuction = auction as AuctionDetail & ChainAuctionFields
-      if (!chainAuction.auction_pubkey) {
-        throw new Error("Auction is not synced on-chain yet")
-      }
-
-      const amountLamports = new BN(Math.floor(amount * 1_000_000_000))
-      const committed = await commitBidOnChain({
-        connection,
-        wallet,
-        auctionPubkey: chainAuction.auction_pubkey,
-        amountLamports,
-      })
-
-      localStorage.setItem(
-        `bid_salt:${chainAuction.auction_pubkey}:${wallet.publicKey?.toBase58() || "unknown"}`,
-        committed.saltHex,
-      )
-
-      await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/chain/sync`, {
-        auction_pubkey: chainAuction.auction_pubkey,
-        seller_pubkey: chainAuction.seller_pubkey || user?.wallet_address,
-        winner_pubkey: chainAuction.winner_pubkey,
-        chain_status: "commit_phase",
-        current_price_lamports: amountLamports.toNumber(),
-        last_synced_slot: await connection.getSlot("confirmed"),
+      await api.createBidApiAuctionsAuctionIdBidsPost(auctionId, {
+        amount,
+        auction_id: auctionId,
+        signature: "backend-managed",
       })
 
       const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
@@ -202,8 +163,9 @@ export default function AuctionDetailPage() {
       setBidAmount("")
       setBidPlaced(true)
       setTimeout(() => setBidPlaced(false), 4000)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Bid failed")
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      setError(detail || (err instanceof Error ? err.message : "Bid failed"))
     } finally {
       biddingRef.current = false
       setBidding(false)
@@ -216,37 +178,13 @@ export default function AuctionDetailPage() {
     finishingRef.current = true
     setFinishing(true)
     try {
-      const chainAuction = auction as AuctionDetail & ChainAuctionFields
-      const missing: string[] = []
-      if (!chainAuction.auction_pubkey) missing.push("auction_pubkey")
-      if (!chainAuction.asset_pubkey) missing.push("asset_pubkey")
-      if (!chainAuction.mint_pubkey) missing.push("mint_pubkey")
-      if (!chainAuction.seller_pubkey) missing.push("seller_pubkey")
-      if (missing.length > 0) {
-        throw new Error(`Аукцион не синхронизирован с блокчейном (отсутствуют: ${missing.join(", ")}). Попробуйте обновить страницу.`)
-      }
-
-      const canceled = await cancelAuctionOnChain({
-        connection,
-        wallet,
-        auctionPubkey: chainAuction.auction_pubkey!,
-        assetPubkey: chainAuction.asset_pubkey!,
-        mintPubkey: chainAuction.mint_pubkey!,
-        sellerPubkey: chainAuction.seller_pubkey!,
-      })
-
-      await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/chain/sync`, {
-        auction_pubkey: chainAuction.auction_pubkey,
-        seller_pubkey: chainAuction.seller_pubkey,
-        chain_status: "cancelled",
-        cancel_signature: canceled.signature,
-        last_synced_slot: await connection.getSlot("confirmed"),
-      })
+      await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/cancel`)
 
       const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
       setAuction(updated)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось завершить аукцион")
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      setError(detail || (err instanceof Error ? err.message : "Не удалось завершить аукцион"))
     } finally {
       finishingRef.current = false
       setFinishing(false)
@@ -259,37 +197,13 @@ export default function AuctionDetailPage() {
     finishingRef.current = true
     setFinishing(true)
     try {
-      const chainAuction = auction as AuctionDetail & ChainAuctionFields
-      if (!chainAuction.auction_pubkey || !chainAuction.seller_pubkey || !chainAuction.winner_pubkey) {
-        throw new Error("Данные аукциона неполны для финализации. Попробуйте обновить страницу.")
-      }
-      const treasury = process.env.NEXT_PUBLIC_PROTOCOL_TREASURY
-      if (!treasury) {
-        throw new Error("Platform treasury is not configured")
-      }
-
-      const result = await finalizeAuctionOnChain({
-        connection,
-        wallet,
-        auctionPubkey: chainAuction.auction_pubkey,
-        sellerPubkey: chainAuction.seller_pubkey,
-        treasuryPubkey: treasury,
-        winnerPubkey: chainAuction.winner_pubkey,
-      })
-
-      await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/chain/sync`, {
-        auction_pubkey: chainAuction.auction_pubkey,
-        seller_pubkey: chainAuction.seller_pubkey,
-        winner_pubkey: chainAuction.winner_pubkey,
-        chain_status: "finalized",
-        finalize_signature: result.signature,
-        last_synced_slot: await connection.getSlot("confirmed"),
-      })
+      await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/finalize`)
 
       const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
       setAuction(updated)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось финализировать аукцион")
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      setError(detail || (err instanceof Error ? err.message : "Не удалось финализировать аукцион"))
     } finally {
       finishingRef.current = false
       setFinishing(false)
@@ -413,7 +327,7 @@ export default function AuctionDetailPage() {
                         </div>
                         <div className="text-right">
                           <div className="font-bold text-gray-900">
-                            {bid.amount.toFixed(2)}{" "}
+                            {bid.amount.toFixed(4)}{" "}
                             <span className="font-semibold text-[#9945FF] text-sm">SOL</span>
                           </div>
                         </div>
@@ -432,7 +346,7 @@ export default function AuctionDetailPage() {
                 <div className="mb-1 text-sm text-gray-500">Current Bid</div>
                 <div className="mb-4 flex items-baseline gap-2">
                   <span className="text-4xl font-extrabold text-gray-900">
-                    {auction.current_price.toFixed(2)}
+                    {auction.current_price.toFixed(4)}
                   </span>
                   <span className="text-xl font-bold text-[#9945FF]">SOL</span>
                 </div>
@@ -473,7 +387,7 @@ export default function AuctionDetailPage() {
                         {finishing ? "Отменяем..." : "Отменить аукцион"}
                       </Button>
                     )}
-                    {(auction as AuctionDetail & ChainAuctionFields).chain_status === "ready_to_finalize" && (
+                    {(auction as any).chain_status === "ready_to_finalize" && (
                       <Button
                         className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
                         onClick={handleFinalizeAuction}
@@ -515,7 +429,7 @@ export default function AuctionDetailPage() {
                         disabled={statusUpdating}
                       >
                         <WalletIcon className="mr-2 h-4 w-4" />
-                        {statusUpdating ? "Оплачиваем..." : `Оплатить ${auction.current_price.toFixed(2)} SOL`}
+                        {statusUpdating ? "Оплачиваем..." : `Оплатить ${auction.current_price.toFixed(4)} SOL`}
                       </Button>
                     )}
                     {auction.status === AuctionStatus.shipped && (
@@ -542,7 +456,7 @@ export default function AuctionDetailPage() {
                   </div>
                 ) : !isActive ? (
                   <p className="text-center text-sm text-gray-500 py-4">
-                    Аукцион завершён
+                    {auction.status === AuctionStatus.cancelled ? "Аукцион отменён" : "Аукцион завершён"}
                   </p>
                 ) : (
                   <div className="space-y-3">
@@ -557,9 +471,9 @@ export default function AuctionDetailPage() {
                       <Label className="mb-1.5 text-sm">Your Bid (SOL)</Label>
                       <Input
                         type="number"
-                        step="0.01"
+                        step="0.0001"
                         min={minBid}
-                        placeholder={`Min ${minBid.toFixed(2)} SOL`}
+                        placeholder={`Min ${minBid.toFixed(4)} SOL`}
                         value={bidAmount}
                         onChange={(e) => setBidAmount(e.target.value)}
                         className="h-11 text-base"
@@ -606,12 +520,12 @@ export default function AuctionDetailPage() {
                 <CardContent className="px-4 pb-4 pt-0 space-y-3">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Starting price</span>
-                    <span className="font-medium">{auction.starting_price.toFixed(2)} SOL</span>
+                    <span className="font-medium">{auction.starting_price.toFixed(4)} SOL</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Current price</span>
-                    <span className="font-bold">{auction.current_price.toFixed(2)} SOL</span>
+                    <span className="font-bold">{auction.current_price.toFixed(4)} SOL</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between text-sm">

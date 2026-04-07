@@ -34,6 +34,7 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - DEV_AUTH_BYPASS=${DEV_AUTH_BYPASS:-true}
       - DEV_SIGNER_KEYPAIR=${DEV_SIGNER_KEYPAIR:-}
+      - SOLANA_RPC_URL=https://api.devnet.solana.com
       - S3_ENDPOINT_URL=http://minio:9000
       - S3_PUBLIC_URL=http://localhost:9000
       - S3_BUCKET=4bid-files
@@ -45,6 +46,16 @@ services:
     depends_on:
       - db
       - minio
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app
+          ignore:
+            - __pycache__/
+            - .venv/
+        - action: rebuild
+          path: ./backend/pyproject.toml
 
   frontend:
     build:
@@ -62,6 +73,16 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /app
+          ignore:
+            - node_modules/
+            - .next/
+        - action: rebuild
+          path: ./frontend/package.json
 
 volumes:
   postgres_data:

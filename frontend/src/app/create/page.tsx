@@ -13,10 +13,6 @@ import { Separator } from "@/components/ui/separator"
 import { LotType } from "@/api/generated"
 import { api } from "@/api/client"
 import { useAuth } from "@/context/auth"
-import { useConnection, useWallet } from "@solana/wallet-adapter-react"
-import { BN } from "@coral-xyz/anchor"
-import { createAuctionOnChain } from "@/lib/chain/tokenization-client"
-import { AXIOS_INSTANCE } from "@/api/axios-instance"
 
 const MIN_AUCTION_MINUTES = 1
 const MAX_AUCTION_DAYS = 30
@@ -40,8 +36,6 @@ const DURATIONS = [
 export default function CreateAuctionPage() {
   const router = useRouter()
   const { user } = useAuth()
-  const { connection } = useConnection()
-  const wallet = useWallet()
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
@@ -156,42 +150,7 @@ export default function CreateAuctionPage() {
       return
     }
     setSubmitting(true)
-    let createdAuctionId: number | null = null
     try {
-      const ensureConnectedWallet = async () => {
-        const selected = wallet.wallet
-        const selectedName = selected?.adapter.name?.toLowerCase() ?? ""
-        const selectedReady = selected?.readyState === "Installed"
-
-        if (!selected || !selectedReady || !selectedName.includes("solflare")) {
-          const solflare = wallet.wallets.find(
-            (w) =>
-              w.adapter.name.toLowerCase().includes("solflare") &&
-              w.readyState === "Installed",
-          )
-          if (!solflare) {
-            throw new Error("Solflare extension is not installed or locked")
-          }
-          if (wallet.wallet?.adapter.name !== solflare.adapter.name) {
-            wallet.select(solflare.adapter.name)
-          }
-        }
-
-        if (!wallet.connected) {
-          await wallet.connect()
-        }
-
-        const pubkey = wallet.publicKey ?? wallet.wallet?.adapter.publicKey
-        if (!pubkey) {
-          throw new Error("Connect wallet before creating an on-chain auction")
-        }
-        if (user.wallet_address && user.wallet_address !== pubkey.toBase58()) {
-          throw new Error("Connected wallet does not match your authenticated account")
-        }
-      }
-
-      await ensureConnectedWallet()
-
       const auction = await api.createAuctionApiAuctionsPost({
         title: form.title,
         description: form.description || undefined,
@@ -202,37 +161,11 @@ export default function CreateAuctionPage() {
         image_file_id: form.imageFileId ?? undefined,
         image_url: !form.imageFileId ? (form.imageUrl || undefined) : undefined,
       })
-      createdAuctionId = auction.id
-
-      const chain = await createAuctionOnChain({
-        connection,
-        wallet,
-        title: form.title,
-        metadataUri: form.imageUrl || `ipfs://4bid/${auction.id}`,
-        realWorldRef: `auction:${auction.id}`,
-        minBidLamports: new BN(Math.floor(parseFloat(form.startingPrice) * 1_000_000_000)),
-        commitDurationSec: 120,
-        revealDurationSec: 120,
-      })
-
-      await AXIOS_INSTANCE.post(`/api/auctions/${auction.id}/chain/sync`, {
-        auction_pubkey: chain.auctionPda,
-        asset_pubkey: chain.assetPda,
-        mint_pubkey: chain.mint,
-        seller_pubkey: chain.sellerPubkey,
-        chain_status: chain.chainStatus,
-        current_price_lamports: Math.floor(parseFloat(form.startingPrice) * 1_000_000_000),
-        last_synced_slot: await connection.getSlot("confirmed"),
-      })
 
       router.push(`/auctions/${auction.id}`)
-    } catch (err) {
-      const base = err instanceof Error ? err.message : "Failed to create auction"
-      if (createdAuctionId) {
-        setError(`${base}. Auction #${createdAuctionId} exists in backend, but on-chain initialization failed.`)
-      } else {
-        setError(base)
-      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to create auction"
+      setError(msg)
       setSubmitting(false)
     }
   }
@@ -508,7 +441,7 @@ export default function CreateAuctionPage() {
                 <Separator />
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Starting Price</span>
-                  <span className="font-bold text-[#9945FF]">{parseFloat(form.startingPrice).toFixed(2)} SOL</span>
+                  <span className="font-bold text-[#9945FF]">{parseFloat(form.startingPrice).toFixed(4)} SOL</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between text-sm">

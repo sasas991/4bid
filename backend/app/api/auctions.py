@@ -1,3 +1,7 @@
+import logging
+import math
+import time
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
@@ -6,6 +10,13 @@ from ..core import security
 from ..models.models import Auction, User, Bid, AuctionStatus
 from ..schemas import schemas
 from ..services import auctions as auction_service
+from ..services.anchor_client import anchor_chain_client
+
+logger = logging.getLogger(__name__)
+
+# Approximate rent cost for asset + auction + mint + 2 ATAs (in SOL).
+# This is deducted from the user's internal balance to cover the platform keypair's SOL spend.
+RENT_COST_SOL = 0.02
 
 router = APIRouter(prefix="/auctions", tags=["auctions"])
 
@@ -19,7 +30,58 @@ def create_auction(
     current_user: User = Depends(security.get_current_user),
     db: Session = Depends(get_db)
 ):
-    return auction_service.create_auction(db, auction, current_user.id)
+    # Deduct rent cost from user's internal balance
+    if current_user.balance < RENT_COST_SOL:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient balance for on-chain rent. Need at least {RENT_COST_SOL} SOL, have {current_user.balance:.4f} SOL.",
+        )
+
+    db_auction = auction_service.create_auction(db, auction, current_user.id)
+
+    # Use server time but subtract the Solana clock lag so start_ts is
+    # already in the past for Solana by the time bids arrive.
+    # create_auction on-chain checks start_ts >= solana_now, so we use
+    # solana_now directly with a tiny buffer for tx propagation.
+    # Compute deadline in seconds from now (Solana-clock-relative)
+    deadline_ts = int(db_auction.deadline.timestamp())
+    commit_duration = max(deadline_ts - int(time.time()), 60)  # at least 60s
+    min_bid_lamports = int(math.floor(auction.starting_price * 1_000_000_000))
+
+    try:
+        result = anchor_chain_client.create_auction_on_chain(
+            title=auction.title,
+            metadata_uri=auction.image_url or f"ipfs://4bid/{db_auction.id}",
+            real_world_ref=f"auction:{db_auction.id}",
+            min_bid_lamports=min_bid_lamports,
+            commit_duration_secs=commit_duration,
+            reveal_duration_secs=60,
+        )
+    except Exception as exc:
+        logger.exception("On-chain auction creation failed for auction %s", db_auction.id)
+        # Mark the DB auction as failed but keep it for retry
+        db_auction.chain_status = "chain_failed"
+        db.flush()
+        db.refresh(db_auction)
+        raise HTTPException(
+            status_code=502,
+            detail=f"On-chain creation failed: {exc}. Auction #{db_auction.id} saved as draft.",
+        ) from exc
+
+    # Update the DB auction with chain data
+    db_auction.auction_pubkey = result.auction_pubkey
+    db_auction.asset_pubkey = result.asset_pubkey
+    db_auction.mint_pubkey = result.mint_pubkey
+    db_auction.seller_pubkey = result.seller_pubkey
+    db_auction.chain_status = "created"
+    db_auction.last_synced_slot = result.slot
+
+    # Deduct rent from user balance
+    current_user.balance -= RENT_COST_SOL
+
+    db.flush()
+    db.refresh(db_auction)
+    return db_auction
 
 @router.get("/my/auctions", response_model=List[schemas.Auction])
 def get_my_auctions(
@@ -74,6 +136,22 @@ def create_bid(
     db: Session = Depends(get_db)
 ):
     return auction_service.place_bid(db, auction_id, bid, current_user)
+
+@router.post("/{auction_id}/cancel", response_model=schemas.Auction)
+def cancel_auction(
+    auction_id: int,
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+):
+    return auction_service.cancel_auction(db, auction_id, current_user.id)
+
+@router.post("/{auction_id}/finalize", response_model=schemas.Auction)
+def finalize_auction(
+    auction_id: int,
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+):
+    return auction_service.finalize_auction(db, auction_id, current_user.id)
 
 @router.patch("/{auction_id}/status", response_model=schemas.Auction)
 def update_auction_status(
