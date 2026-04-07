@@ -1,74 +1,196 @@
 # 4bid
 
-A decentralized auction and settlement platform built on Solana. No banks, no intermediaries, no centralized accounts — just wallets, bids, and transparent deal cycles.
+4bid is a Solana-based auction platform with an on-chain trust model:
 
-## What is 4bid?
+- critical auction outcomes are decided by the Anchor program
+- backend mirrors verified chain state for UX/read performance
+- frontend signs and submits transactions from user wallets
 
-4bid lets users create and participate in auctions using their Solana wallet as their identity. Bids are cryptographically signed, payments are made in SOL, and every stage of the deal — from bid to delivery confirmation — is tracked transparently.
+## Core idea
 
-**Supported lot types:**
-- Physical goods (electronics, items)
-- Services (design, development, consulting)
-- Knowledge (courses, mentorship, information access)
+`Chain decides. Backend verifies/mirrors. Frontend signs.`
 
-## Architecture
+4bid supports:
 
+- physical goods
+- physical services
+- digital services
+- information/knowledge lots
+
+## Trust model
+
+Critical actions are intended to be on-chain:
+
+- create auction state
+- commit bid
+- reveal bid
+- finalize auction state
+- settle winner asset/funds
+- refund loser
+- cancel auction
+
+Backend is a projection/indexing layer for fast API responses, not final authority.
+
+## Privacy model (important)
+
+4bid is **pseudonymous**, not fully anonymous.
+
+- wallet signatures authorize actions
+- wallet addresses and transactions are public on Solana
+- optional Google auth can link identity data (`email`, `google_id`, `username`, etc.)
+
+## High-level architecture
+
+```text
+Next.js Frontend  --->  FastAPI Backend  ---> PostgreSQL (projection cache)
+       |                      |
+       |                      ---> Solana RPC (read + verify)
+       |
+       ---> Wallet signatures + Anchor tx submission (Solana)
 ```
-Frontend (Next.js)
-      │
-      │  REST API
-      │
-Backend (FastAPI)
-      │              │
-      │ SQL          │ RPC
-      │              │
-PostgreSQL      Solana Network
-```
 
-- **Presentation Layer** — Next.js with Solana Wallet Adapter
-- **Application Layer** — FastAPI for auth, metadata, and chain-state indexing/projections
-- **Data Layer** — PostgreSQL storing user data + mirrored on-chain auction projections
-- **Blockchain Layer** — Solana Anchor program as the source of truth for critical auction execution
+## Tech stack
 
-## Tech Stack
+Frontend:
 
-**Frontend**
-- Next.js (App Router) + TypeScript
-- `@solana/wallet-adapter` (Solflare)
-- TanStack Query
-- Tailwind CSS
+- Next.js 16 + TypeScript
+- Solana wallet adapter
+- Anchor client (`@coral-xyz/anchor`)
 
-**Backend**
-- Python 3.11+ / FastAPI
-- SQLAlchemy + Alembic
+Backend:
+
+- FastAPI + SQLAlchemy + Alembic
 - PostgreSQL
-- `solana-py` / `solders`
+- `solana-py` + `solders`
 
-**Infrastructure**
-- Docker / Docker Compose
-- Nginx (reverse proxy)
+Infra:
 
-## How It Works
+- Docker Compose
+- MinIO for file storage
 
-1. **Connect wallet** — No registration, no email, no password. Your wallet is your identity.
-2. **Create or browse auctions** — Filter by lot type, view bid history.
-3. **Place/Reveal bids on-chain** — Commit/reveal and bid validity are enforced by the smart contract.
-4. **Finalize/settle on-chain** — Winner selection, settlement, refunds, and cancellation are executed on-chain.
-5. **Read via backend projections** — Backend indexes chain state for fast UI queries but is not authoritative.
+## Repository layout
 
-## Getting Started
+```text
+4bid/
+  backend/                     FastAPI service + DB models + migrations
+  frontend/                    Next.js app
+  contracts/tokenization-contract/
+                               Anchor program + tests
+  docker-compose.yml
+```
+
+## Quick start (Docker)
+
+From repo root:
 
 ```bash
-# Clone the repo
-git clone https://github.com/sasas991/4bid.git
-cd 4bid
-
-# Start all services
-docker compose up
+cd ~/programming/grinding_python/4bid
+sudo docker compose up -d --build
+sudo docker compose ps
 ```
 
-Frontend runs at `http://localhost:3000`, backend at `http://localhost:8000`.
+Endpoints:
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
+- Backend docs: `http://localhost:8000/docs`
+- MinIO console: `http://localhost:9001`
+
+## Frontend checks
+
+```bash
+cd frontend
+npm install
+npm run lint
+npm run build
+```
+
+## Contract checks
+
+```bash
+cd contracts/tokenization-contract
+anchor build
+anchor test
+```
+
+## Running local validator flow (free testing)
+
+If devnet faucet limits block you, use local validator:
+
+Terminal 1:
+
+```bash
+cd ~/programming/grinding_python/4bid
+solana-test-validator --reset
+```
+
+Terminal 2:
+
+```bash
+solana config set --url http://127.0.0.1:8899
+solana airdrop 100
+solana balance
+```
+
+Deploy program:
+
+```bash
+cd ~/programming/grinding_python/4bid/contracts/tokenization-contract
+anchor build
+anchor deploy
+```
+
+Then run app stack:
+
+```bash
+cd ~/programming/grinding_python/4bid
+sudo docker compose up -d --build
+```
+
+## Mainnet/devnet funding note
+
+On Solana, token transfers still need SOL for fees.
+If wallet has `0 SOL`, on-chain actions fail even if it has PYUSD.
+
+## Common issues
+
+### `permission denied ... docker.sock`
+
+Use `sudo docker compose ...` or add your user to `docker` group.
+
+### `address already in use :8000`
+
+Port 8000 is occupied (often by another backend or validator gossip bind side effect).
+Stop the conflicting process/container, then restart compose.
+
+### Auction row created but UI says on-chain initialization failed
+
+This means backend metadata create succeeded, but chain tx step failed.
+Check:
+
+- connected wallet matches authenticated account
+- wallet has SOL for fees
+- correct network (localnet/devnet/mainnet)
+- protocol/program initialization state
+- frontend + backend logs at submit time
+
+## Current auth modes
+
+- Wallet nonce + signature login
+- Optional Google login
+- Dev bypass mode (`DEV_AUTH_BYPASS`) for local testing only
+
+## Do not use dev bypass in production
+
+`DEV_AUTH_BYPASS=true` is for local development/testing only.
+Keep it disabled in production.
+
+## Contract README
+
+Contract-specific build/test/deploy notes:
+
+- [contracts/tokenization-contract/README.md](contracts/tokenization-contract/README.md)
 
 ## License
 
-See [LICENSE](LICENSE).
+See [LICENSE](LICENSE)
