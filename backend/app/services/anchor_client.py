@@ -408,7 +408,7 @@ class AnchorChainClient:
 
         # Compute timestamps RIGHT before sending, using fresh Solana clock
         fresh_solana_now = self.get_block_time()
-        start_ts = fresh_solana_now + 5
+        start_ts = fresh_solana_now + 30  # buffer for tx propagation on devnet
         commit_end_ts = start_ts + max(commit_duration_secs, 60)
         reveal_end_ts = commit_end_ts + max(reveal_duration_secs, 60)
 
