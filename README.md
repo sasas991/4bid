@@ -1,129 +1,120 @@
 # 4bid
 
-4bid is a Solana-based auction platform with an on-chain trust model:
+A decentralized auction and settlement platform built on Solana. No banks, no intermediaries, no centralized accounts — just wallets, bids, and transparent deal cycles.
 
-- critical auction outcomes are decided by the Anchor program
-- backend mirrors verified chain state for UX/read performance
-- frontend signs and submits transactions from user wallets
+## What is 4bid?
 
-## Core idea
+4bid lets users tokenize assets/services and run auctions using their Solana wallet as identity. Auction-critical state is handled on-chain, while backend mirrors verified chain state for fast UI reads.
 
-`Chain decides. Backend verifies/mirrors. Frontend signs.`
+**Supported lot types:**
 
-4bid supports:
+- Physical goods
+- Services
+- Knowledge / information
+- Digital services
 
-- physical goods
-- physical services
-- digital services
-- information/knowledge lots
+## Problem we solve
+
+Traditional marketplaces rely on platform trust for critical outcomes:
+
+- auction progression and winner determination
+- settlement/refund correctness
+- custody assumptions around deal state
+
+4bid solves this by combining:
+
+- on-chain auction authority (program-enforced outcomes)
+- tokenization-first listing flow for assets/services
+- backend verification/projection layer for fast UX reads
+
+## Architecture
+
+```text
+Frontend (Next.js)
+      │
+      │  REST API
+      │
+Backend (FastAPI)
+      │              │
+      │ SQL          │ RPC
+      │              │
+PostgreSQL      Solana Network
+```
+
+- **Presentation layer**: Next.js + wallet adapter
+- **Application layer**: FastAPI (auth, metadata, projection sync)
+- **Data layer**: PostgreSQL (off-chain projection/cache)
+- **Blockchain layer**: Anchor program (source of truth for critical auction outcomes)
 
 ## Trust model
 
-Critical actions are intended to be on-chain:
+Chain decides; backend verifies/mirrors; frontend signs.
 
-- create auction state
-- commit bid
-- reveal bid
-- finalize auction state
-- settle winner asset/funds
-- refund loser
-- cancel auction
+Critical auction operations are intended to be on-chain:
 
-Backend is a projection/indexing layer for fast API responses, not final authority.
-
-## Privacy model (important)
-
-4bid is **pseudonymous**, not fully anonymous.
-
-- wallet signatures authorize actions
-- wallet addresses and transactions are public on Solana
-- optional Google auth can link identity data (`email`, `google_id`, `username`, etc.)
-
-## High-level architecture
-
-```text
-Next.js Frontend  --->  FastAPI Backend  ---> PostgreSQL (projection cache)
-       |                      |
-       |                      ---> Solana RPC (read + verify)
-       |
-       ---> Wallet signatures + Anchor tx submission (Solana)
-```
+- create auction
+- commit/reveal bid
+- finalize/cancel auction
+- settlement/refunds
 
 ## Tech stack
 
-Frontend:
+**Frontend**
 
 - Next.js 16 + TypeScript
-- Solana wallet adapter
-- Anchor client (`@coral-xyz/anchor`)
+- `@solana/wallet-adapter`
+- `@coral-xyz/anchor`
 
-Backend:
+**Backend**
 
 - FastAPI + SQLAlchemy + Alembic
 - PostgreSQL
 - `solana-py` + `solders`
 
-Infra:
+**Infrastructure**
 
 - Docker Compose
-- MinIO for file storage
+- MinIO
 
-## Repository layout
-
-```text
-4bid/
-  backend/                     FastAPI service + DB models + migrations
-  frontend/                    Next.js app
-  contracts/tokenization-contract/
-                               Anchor program + tests
-  docker-compose.yml
-```
-
-## Docker (full app)
-
-From repo root:
+## Getting started
 
 ```bash
-cd /path/to/4bid
-sudo docker compose up -d --build
-sudo docker compose ps
+# Clone
+git clone https://github.com/sasas991/4bid.git
+cd 4bid
+
+# Start all services
+docker compose up -d --build
+docker compose ps
 ```
 
-Endpoints:
+Frontend runs at `http://localhost:3000`, backend at `http://localhost:8000`.
 
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:8000`
-- Backend docs: `http://localhost:8000/docs`
-- MinIO console: `http://localhost:9001`
-
-Useful Docker commands:
+## Docker commands
 
 ```bash
-# follow backend/frontend logs
-sudo docker compose logs -f backend frontend
+# follow logs
+docker compose logs -f backend frontend
 
-# restart one service
-sudo docker compose restart backend
-sudo docker compose restart frontend
+# restart services
+docker compose restart backend
+docker compose restart frontend
 
 # stop stack
-sudo docker compose down
+docker compose down
 
-# stop + remove volumes (full reset)
-sudo docker compose down -v
+# full reset (includes db volume)
+docker compose down -v
 
-# stop + remove orphans
-sudo docker compose down --remove-orphans
+# clean orphan containers
+docker compose down --remove-orphans
 ```
 
-If Docker permission error appears:
+If you get Docker permission errors (`docker.sock`), run with `sudo` or add your user to the `docker` group.
 
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
-```
+## Development checks
 
-## Frontend checks
+Frontend:
 
 ```bash
 cd frontend
@@ -132,7 +123,7 @@ npm run lint
 npm run build
 ```
 
-## Contract checks
+Contract:
 
 ```bash
 cd contracts/tokenization-contract
@@ -140,14 +131,13 @@ anchor build
 anchor test
 ```
 
-## Running local validator flow (free testing)
+## Localnet flow (free testing)
 
-If devnet faucet limits block you, use local validator:
+Use local validator if devnet faucet is rate-limited:
 
 Terminal 1:
 
 ```bash
-cd /path/to/4bid
 solana-test-validator --reset
 ```
 
@@ -159,65 +149,42 @@ solana airdrop 100
 solana balance
 ```
 
-Deploy program:
+Deploy contract to localnet:
 
 ```bash
-cd /path/to/4bid/contracts/tokenization-contract
+cd contracts/tokenization-contract
 anchor build
 anchor deploy
 ```
 
-Then run app stack:
-
-```bash
-cd /path/to/4bid
-sudo docker compose up -d --build
-```
-
-## Mainnet/devnet funding note
-
-On Solana, token transfers still need SOL for fees.
-If wallet has `0 SOL`, on-chain actions fail even if it has PYUSD.
+Then run app stack and test from UI.
 
 ## Common issues
 
 ### `permission denied ... docker.sock`
 
-Use `sudo docker compose ...` or add your user to `docker` group.
+Run docker commands with `sudo` or fix docker group permissions.
 
-### `address already in use :8000`
+### `failed to bind host port 8000`
 
-Port 8000 is occupied (often by another backend or validator gossip bind side effect).
-Stop the conflicting process/container, then restart compose.
+Port 8000 is already in use. Stop the conflicting process/container, then restart compose.
 
-### Auction row created but UI says on-chain initialization failed
+### Auction appears in backend but on-chain initialization failed
 
-This means backend metadata create succeeded, but chain tx step failed.
-Check:
+This means metadata create succeeded, but chain tx failed. Check:
 
-- connected wallet matches authenticated account
 - wallet has SOL for fees
-- correct network (localnet/devnet/mainnet)
-- protocol/program initialization state
-- frontend + backend logs at submit time
-
-## Current auth modes
-
-- Wallet nonce + signature login
-- Optional Google login
-- Dev bypass mode (`DEV_AUTH_BYPASS`) for local testing only
-
-## Do not use dev bypass in production
-
-`DEV_AUTH_BYPASS=true` is for local development/testing only.
-Keep it disabled in production.
+- network matches app/validator
+- connected wallet matches authenticated account
+- contract/protocol is initialized
+- frontend/backend logs during submit
 
 ## Contract README
 
-Contract-specific build/test/deploy notes:
+Contract-specific instructions:
 
 - [contracts/tokenization-contract/README.md](contracts/tokenization-contract/README.md)
 
 ## License
 
-See [LICENSE](LICENSE)
+See [LICENSE](LICENSE).
