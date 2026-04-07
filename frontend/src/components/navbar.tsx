@@ -3,9 +3,8 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { SearchIcon, WalletIcon, PlusCircleIcon, ZapIcon, LogOutIcon, FlaskConicalIcon } from "lucide-react"
+import { WalletIcon, PlusCircleIcon, ZapIcon, LogOutIcon, FlaskConicalIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/context/auth"
 import { WalletConnectDialog } from "@/components/wallet-connect-dialog"
@@ -27,7 +26,6 @@ export function Navbar() {
   const wallet = useWallet()
   const [connectOpen, setConnectOpen] = React.useState(false)
   const [linkWalletOpen, setLinkWalletOpen] = React.useState(false)
-  const [searchQuery, setSearchQuery] = React.useState("")
 
   const handleDevLogin = React.useCallback(async () => {
     const res = await AXIOS_INSTANCE.post<{ access_token: string }>("/api/auth/dev-login")
@@ -77,34 +75,8 @@ export function Navbar() {
             </span>
           </Link>
 
-          {/* Search */}
-          <div className="flex flex-1 items-center gap-2">
-            <div className="relative flex-1">
-              <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                type="search"
-                placeholder="Search auctions, items, services..."
-                className="h-10 rounded-lg border-gray-300 pl-9 text-sm focus-visible:border-[#3665F3] focus-visible:ring-[#3665F3]/20"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && searchQuery)
-                    window.location.href = `/auctions?q=${encodeURIComponent(searchQuery)}`
-                }}
-              />
-            </div>
-            <Button
-              className="h-10 bg-[#3665F3] px-5 text-sm hover:bg-[#2952d4]"
-              onClick={() => {
-                if (searchQuery) window.location.href = `/auctions?q=${encodeURIComponent(searchQuery)}`
-              }}
-            >
-              Search
-            </Button>
-          </div>
-
           {/* Actions */}
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <Link href="/create">
               <Button variant="outline" size="sm" className="h-9 gap-1.5 border-[#3665F3] text-[#3665F3] hover:bg-[#3665F3]/5">
                 <PlusCircleIcon className="h-4 w-4" />
