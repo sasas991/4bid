@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-tokenization_contract = "BLt6gcTzkeyZ5ygxem5AZSFQ3TyanAzkmRVDnyRNHHC2"
+tokenization_contract = "2KQUuKgA5QXLgUdzRDCDEM1kgAfRnKucgAp6N38iihYa"
 
 [registry]
 url = "https://api.apr.dev"

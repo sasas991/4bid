@@ -36,7 +36,7 @@ use instructions::{
     reveal_bid::{self},
 };
 
-declare_id!("BLt6gcTzkeyZ5ygxem5AZSFQ3TyanAzkmRVDnyRNHHC2");
+declare_id!("2KQUuKgA5QXLgUdzRDCDEM1kgAfRnKucgAp6N38iihYa");
 
 #[program]
 pub mod tokenization_contract {
