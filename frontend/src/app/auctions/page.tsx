@@ -24,7 +24,7 @@ export default function AuctionsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [selectedType, setSelectedType] = useState("all")
-  const [sortBy, setSortBy] = useState("ending_soon")
+  const [sortBy, setSortBy] = useState("newest")
 
   useEffect(() => {
     api
@@ -51,6 +51,13 @@ export default function AuctionsPage() {
     }
 
     switch (sortBy) {
+      case "newest":
+        results.sort((a, b) => {
+          const byCreatedAt = new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          if (byCreatedAt !== 0) return byCreatedAt
+          return b.id - a.id
+        })
+        break
       case "ending_soon":
         results.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
         break
@@ -149,6 +156,7 @@ export default function AuctionsPage() {
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="newest">Newest</SelectItem>
                   <SelectItem value="ending_soon">Ending Soon</SelectItem>
                   <SelectItem value="highest_bid">Highest Bid</SelectItem>
                   <SelectItem value="lowest_bid">Lowest Bid</SelectItem>
