@@ -290,14 +290,17 @@ class AnchorChainClient:
             recent_blockhash=recent_blockhash,
         )
         tx = VersionedTransaction(msg, signers)
-        resp = self.client.send_transaction(tx)
+        try:
+            resp = self.client.send_transaction(tx)
+        except Exception as e:
+            raise ValueError(f"Transaction send failed: {e}") from e
         resp_dict = self._resp_to_dict(resp)
         error = resp_dict.get("error")
         if error:
             raise ValueError(f"Transaction failed: {error}")
         sig = resp_dict.get("result")
         if not sig:
-            raise ValueError("No signature returned from RPC")
+            raise ValueError(f"No signature returned from RPC: {resp_dict}")
 
         # Wait for confirmation before returning
         self.client.confirm_transaction(Signature.from_string(sig), commitment=Confirmed)

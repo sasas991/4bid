@@ -90,7 +90,10 @@ def place_bid(db: Session, auction_id: int, bid_data: schemas.BidCreate, user: U
 
     # Ensure auction is in commit phase on-chain
     import time as _time
-    decoded = anchor_chain_client.get_decoded_auction(auction.auction_pubkey)
+    try:
+        decoded = anchor_chain_client.get_decoded_auction(auction.auction_pubkey)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Auction does not exist on-chain. It may have failed to create.")
     if decoded.status_code >= 3:  # Finalized or Cancelled
         raise HTTPException(status_code=400, detail="Auction is no longer accepting bids")
 
