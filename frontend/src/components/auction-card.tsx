@@ -23,13 +23,24 @@ interface AuctionCardProps {
   className?: string
 }
 
+function parseBackendUtc(iso: string): Date {
+  if (!iso.endsWith("Z") && !iso.includes("+") && !/\d{2}-\d{2}:\d{2}$/.test(iso)) {
+    return new Date(`${iso}Z`)
+  }
+  return new Date(iso)
+}
+
 export function AuctionCard({ auction, className }: AuctionCardProps) {
   const { label: timeLabel, urgent } = formatTimeLeftRu(auction.deadline)
   const style = LOT_STYLE[auction.lot_type ?? LotType.physical_item]
   const imageUrl = resolveFileUrl(auction.image_file, auction.image_url)
+  const chainStatus = auction.chain_status ?? ""
+  const chainBiddingClosed = ["reveal_phase", "ready_to_finalize", "finalized", "settled", "cancelled"].includes(chainStatus)
   const isEnded =
     auction.status !== AuctionStatus.active ||
-    new Date(auction.deadline).getTime() <= Date.now()
+    parseBackendUtc(auction.deadline).getTime() <= Date.now() ||
+    chainBiddingClosed
+  const displayTimeLabel = auction.status === AuctionStatus.active && chainBiddingClosed ? "Bidding closed" : timeLabel
 
   return (
     <Link href={`/auctions/${auction.id}`}>
@@ -66,9 +77,9 @@ export function AuctionCard({ auction, className }: AuctionCardProps) {
           </div>
 
           <div className="flex items-center justify-between">
-            <div className={cn("flex items-center gap-1 text-xs", urgent ? "text-red-600" : "text-gray-500")}>
+            <div className={cn("flex items-center gap-1 text-xs", chainBiddingClosed ? "text-amber-600" : urgent ? "text-red-600" : "text-gray-500")}>
               <ClockIcon className="h-3 w-3" />
-              <span className="font-medium">{timeLabel}</span>
+              <span className="font-medium">{displayTimeLabel}</span>
             </div>
             <div className="flex items-center gap-1 text-xs text-gray-400">
               <TrendingUpIcon className="h-3 w-3" />

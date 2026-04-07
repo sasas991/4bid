@@ -19,6 +19,13 @@ const LOT_TYPE_FILTERS = [
   { id: LotType.information, label: "Knowledge" },
 ]
 
+function parseBackendUtc(iso: string): Date {
+  if (!iso.endsWith("Z") && !iso.includes("+") && !/\d{2}-\d{2}:\d{2}$/.test(iso)) {
+    return new Date(`${iso}Z`)
+  }
+  return new Date(iso)
+}
+
 export default function AuctionsPage() {
   const [auctions, setAuctions] = useState<Auction[]>([])
   const [loading, setLoading] = useState(true)
@@ -59,7 +66,7 @@ export default function AuctionsPage() {
         })
         break
       case "ending_soon":
-        results.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+        results.sort((a, b) => parseBackendUtc(a.deadline).getTime() - parseBackendUtc(b.deadline).getTime())
         break
       case "highest_bid":
         results.sort((a, b) => b.current_price - a.current_price)

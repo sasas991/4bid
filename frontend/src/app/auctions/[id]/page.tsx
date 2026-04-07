@@ -73,6 +73,13 @@ function lifecycleIndex(steps: LifecycleStep[], status: AuctionStatus): number {
   return idx === -1 ? 0 : idx
 }
 
+function parseBackendUtc(iso: string): Date {
+  if (!iso.endsWith("Z") && !iso.includes("+") && !/\d{2}-\d{2}:\d{2}$/.test(iso)) {
+    return new Date(`${iso}Z`)
+  }
+  return new Date(iso)
+}
+
 export default function AuctionDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -137,9 +144,17 @@ export default function AuctionDetailPage() {
   const isLeadingBidder = !!(user && highestBid && highestBid.user_id === user.id)
   const hasBid = !!(user && auction.bids?.some((b) => b.user_id === user.id))
   const isActive = auction.status === AuctionStatus.active
-  const biddingClosed = !isActive || new Date(auction.deadline).getTime() <= Date.now()
+  const chainStatus = auction.chain_status ?? ""
+  const isCommitPhase = chainStatus === "commit_phase"
+  const chainBiddingClosed = ["reveal_phase", "ready_to_finalize", "finalized", "settled", "cancelled"].includes(chainStatus)
+  const biddingClosed = !isActive || parseBackendUtc(auction.deadline).getTime() <= Date.now() || chainBiddingClosed
   const lotType = auction.lot_type ?? LotType.physical_item
-  const canFinalizeNow = Date.now() >= new Date(auction.deadline).getTime() + 60_000
+  const canFinalizeNow = Date.now() >= parseBackendUtc(auction.deadline).getTime() + 60_000
+  const timeDisplayLabel = isActive && chainBiddingClosed ? "Торги на блокчейне завершены" : timeLabel
+  const chainStatusHint =
+    isActive && !isCommitPhase && chainStatus
+      ? "Ставки недоступны: on-chain аукцион уже вышел из фазы торгов."
+      : ""
   const lifecycleSteps = getLifecycleSteps(lotType)
   const currentStep = lifecycleIndex(lifecycleSteps, auction.status)
   const lotLabel = LOT_LABEL[lotType]
@@ -431,10 +446,14 @@ export default function AuctionDetailPage() {
 
                 <div className={cn(
                   "mb-4 flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium",
-                  urgent ? "bg-red-50 text-red-700" : "bg-blue-50 text-[#3665F3]"
+                  isActive && chainBiddingClosed
+                    ? "bg-amber-50 text-amber-700"
+                    : urgent
+                      ? "bg-red-50 text-red-700"
+                      : "bg-blue-50 text-[#3665F3]"
                 )}>
                   <ClockIcon className="h-4 w-4" />
-                  {timeLabel}
+                  {timeDisplayLabel}
                 </div>
 
                 <Separator className="mb-4" />
@@ -541,7 +560,9 @@ export default function AuctionDetailPage() {
                   </div>
                 ) : biddingClosed ? (
                   <p className="text-center text-sm text-gray-500 py-4">
-                    {auction.status === AuctionStatus.cancelled ? "Аукцион отменён" : "Аукцион завершён"}
+                    {auction.status === AuctionStatus.cancelled
+                      ? "Аукцион отменён"
+                      : chainStatusHint || "Аукцион завершён"}
                   </p>
                 ) : (
                   <div className="space-y-3">
