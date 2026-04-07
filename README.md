@@ -255,7 +255,3 @@ Set `GOOGLE_CLIENT_ID` before compose up/rebuild.
 ## Related Docs
 
 - Contract docs: [`contracts/tokenization-contract/README.md`](contracts/tokenization-contract/README.md)
-
-## License
-
-MIT (see `LICENSE` if present in your branch/repo policy).
