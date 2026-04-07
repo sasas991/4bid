@@ -1,5 +1,20 @@
 # 4bid On-Chain Auction Program (Anchor 0.32.1)
 
+## Docker note
+
+This README is for the on-chain program only.
+To run the full app (frontend + backend + db + minio), use root README:
+
+- `../../README.md`
+
+Quick app start from repo root:
+
+```bash
+cd ~/programming/grinding_python/4bid
+sudo docker compose up -d --build
+sudo docker compose ps
+```
+
 ## Build
 
 ```bash

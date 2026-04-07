@@ -79,7 +79,7 @@ Infra:
   docker-compose.yml
 ```
 
-## Quick start (Docker)
+## Docker (full app)
 
 From repo root:
 
@@ -95,6 +95,33 @@ Endpoints:
 - Backend: `http://localhost:8000`
 - Backend docs: `http://localhost:8000/docs`
 - MinIO console: `http://localhost:9001`
+
+Useful Docker commands:
+
+```bash
+# follow backend/frontend logs
+sudo docker compose logs -f backend frontend
+
+# restart one service
+sudo docker compose restart backend
+sudo docker compose restart frontend
+
+# stop stack
+sudo docker compose down
+
+# stop + remove volumes (full reset)
+sudo docker compose down -v
+
+# stop + remove orphans
+sudo docker compose down --remove-orphans
+```
+
+If Docker permission error appears:
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
 
 ## Frontend checks
 
