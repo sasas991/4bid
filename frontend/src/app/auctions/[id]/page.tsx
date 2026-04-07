@@ -85,7 +85,7 @@ export default function AuctionDetailPage() {
   const biddingRef = useRef(false)
   const [finishing, setFinishing] = useState(false)
   const finishingRef = useRef(false)
-  const [cancelling] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [error, setError] = useState("")
@@ -135,6 +135,7 @@ export default function AuctionDetailPage() {
     ? [...auction.bids].sort((a, b) => b.amount - a.amount)[0]
     : null
   const isLeadingBidder = !!(user && highestBid && highestBid.user_id === user.id)
+  const hasBid = !!(user && auction.bids?.some((b) => b.user_id === user.id))
   const isActive = auction.status === AuctionStatus.active
   const lotType = auction.lot_type ?? LotType.physical_item
   const lifecycleSteps = getLifecycleSteps(lotType)
@@ -211,15 +212,33 @@ export default function AuctionDetailPage() {
   }
 
   const handleCancelBid = async () => {
-    // On-chain commit-reveal auctions do not support cancelling individual bids.
-    // Committed SOL is refunded automatically after the auction is finalized or cancelled.
-    setError("Ставку нельзя отменить — средства будут возвращены автоматически после завершения аукциона (refund).")
+    setError("")
+    setCancelling(true)
+    try {
+      await api.cancelBidApiAuctionsAuctionIdBidsDelete(auctionId)
+      const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
+      setAuction(updated)
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      setError(detail || (err instanceof Error ? err.message : "Не удалось отменить ставку"))
+    } finally {
+      setCancelling(false)
+    }
   }
 
   const handleStatusUpdate = async () => {
     setStatusUpdating(true)
-    setError("Legacy backend status transitions are disabled. Use on-chain actions (commit/reveal/finalize/settle/refund/cancel).")
-    setStatusUpdating(false)
+    setError("")
+    try {
+      await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/pay`)
+      const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
+      setAuction(updated)
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      setError(detail || (err instanceof Error ? err.message : "Не удалось выполнить операцию"))
+    } finally {
+      setStatusUpdating(false)
+    }
   }
 
   return (
@@ -377,6 +396,15 @@ export default function AuctionDetailPage() {
                       Вы владелец этого аукциона
                     </p>
                     {error && <p className="text-sm text-red-600">{error}</p>}
+                    {auction.status === AuctionStatus.finished && auction.winner_id && (
+                      <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
+                        <CheckCircleIcon className="mx-auto h-6 w-6 text-green-500 mb-1" />
+                        <p className="text-sm font-semibold text-green-700">Победитель определён!</p>
+                        <p className="text-xs text-green-600 mt-1">
+                          Выигрышная ставка: {auction.current_price.toFixed(4)} SOL
+                        </p>
+                      </div>
+                    )}
                     {isActive && (
                       <Button
                         variant="outline"
@@ -385,16 +413,6 @@ export default function AuctionDetailPage() {
                         disabled={finishing}
                       >
                         {finishing ? "Отменяем..." : "Отменить аукцион"}
-                      </Button>
-                    )}
-                    {(auction as any).chain_status === "ready_to_finalize" && (
-                      <Button
-                        className="w-full bg-[#3665F3] hover:bg-[#2952d4]"
-                        onClick={handleFinalizeAuction}
-                        disabled={finishing}
-                      >
-                        <GavelIcon className="mr-2 h-4 w-4" />
-                        {finishing ? "Финализируем..." : "Финализировать аукцион"}
                       </Button>
                     )}
                     {auction.status === AuctionStatus.paid && lotType !== LotType.information && (
@@ -418,9 +436,12 @@ export default function AuctionDetailPage() {
                   </div>
                 ) : isWinner ? (
                   <div className="space-y-3">
-                    <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700 font-medium flex items-center gap-1.5">
-                      <CheckCircleIcon className="h-3.5 w-3.5" />
-                      Вы выиграли этот аукцион!
+                    <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center">
+                      <CheckCircleIcon className="mx-auto h-8 w-8 text-green-500 mb-2" />
+                      <p className="font-bold text-green-700 text-lg">Вы выиграли!</p>
+                      <p className="text-sm text-green-600 mt-1">
+                        Ваша ставка {auction.current_price.toFixed(4)} SOL оказалась лучшей
+                      </p>
                     </div>
                     {auction.status === AuctionStatus.finished && (
                       <Button
@@ -488,7 +509,7 @@ export default function AuctionDetailPage() {
                       <GavelIcon className="mr-2 h-4 w-4" />
                       {bidding ? "Placing..." : "Place Bid"}
                     </Button>
-                    {isLeadingBidder && (
+                    {hasBid && (
                       <Button
                         variant="outline"
                         className="w-full text-red-600 border-red-200 hover:bg-red-50"

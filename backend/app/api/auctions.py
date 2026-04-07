@@ -148,6 +148,14 @@ def finalize_auction(
 ):
     return auction_service.finalize_auction(db, auction_id, current_user.id)
 
+@router.post("/{auction_id}/pay", response_model=schemas.Auction)
+def pay_auction(
+    auction_id: int,
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+):
+    return auction_service.pay_auction(db, auction_id, current_user.id)
+
 @router.patch("/{auction_id}/status", response_model=schemas.Auction)
 def update_auction_status(
     auction_id: int,

@@ -465,6 +465,17 @@ class AnchorChainClient:
             PROGRAM_PUBKEY,
         )
 
+        # Check if bid_commit already exists on-chain (e.g. from a previous cancelled bid)
+        existing = self.get_account(str(bid_commit_pda))
+        if existing is not None:
+            # Bid commit PDA already exists — skip on-chain tx, just return existing data
+            return CommitBidOnChainResult(
+                signature="existing_bid_commit",
+                bid_commit_pubkey=str(bid_commit_pda),
+                salt_hex="",
+                slot=self.get_slot(),
+            )
+
         # Generate salt and compute commitment hash
         salt = os.urandom(32)
         commitment_preimage = bytes(auction_pk) + bytes(bidder) + struct.pack("<Q", amount_lamports) + salt

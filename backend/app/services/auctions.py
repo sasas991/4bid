@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_active_auctions(db: Session, skip: int = 0, limit: int = 10):
-    return (
+    auctions = (
         db.query(Auction)
         .filter(
             or_(
@@ -28,6 +28,9 @@ def get_active_auctions(db: Session, skip: int = 0, limit: int = 10):
         .limit(limit)
         .all()
     )
+    for a in auctions:
+        _auto_finalize_if_expired(db, a)
+    return auctions
 
 
 def create_auction(db: Session, auction: schemas.AuctionCreate, owner_id: int):
@@ -212,10 +215,77 @@ def finalize_auction(db: Session, auction_id: int, user_id: int):
 
 
 def cancel_bid(db: Session, auction_id: int, user_id: int):
-    raise HTTPException(
-        status_code=400,
-        detail="Bid cancellation is not supported. Funds are refunded automatically after auction ends.",
+    auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
+    if not auction:
+        raise HTTPException(status_code=404, detail="Auction not found")
+    if auction.status != AuctionStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="Auction is not active")
+
+    user_bid = (
+        db.query(Bid)
+        .filter(Bid.auction_id == auction_id, Bid.user_id == user_id)
+        .first()
     )
+    if not user_bid:
+        raise HTTPException(status_code=404, detail="You have no bid on this auction")
+
+    # Check if someone placed a higher bid
+    higher_bid = (
+        db.query(Bid)
+        .filter(
+            Bid.auction_id == auction_id,
+            Bid.user_id != user_id,
+            Bid.amount > user_bid.amount,
+        )
+        .first()
+    )
+    if higher_bid:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot cancel — someone already placed a higher bid",
+        )
+
+    # Refund user's internal balance
+    user = db.query(User).filter(User.id == user_id).with_for_update().first()
+    user.balance += user_bid.amount
+
+    # If this was the highest bid, reset current_price to starting_price or next highest
+    next_highest = (
+        db.query(Bid)
+        .filter(Bid.auction_id == auction_id, Bid.user_id != user_id)
+        .order_by(Bid.amount.desc())
+        .first()
+    )
+    auction.current_price = next_highest.amount if next_highest else auction.starting_price
+
+    db.delete(user_bid)
+    db.flush()
+    db.refresh(auction)
+    return auction
+
+
+def pay_auction(db: Session, auction_id: int, user_id: int):
+    """Winner pays for the auction — deduct from internal balance, credit seller."""
+    auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
+    if not auction:
+        raise HTTPException(status_code=404, detail="Auction not found")
+    if auction.status != AuctionStatus.FINISHED:
+        raise HTTPException(status_code=400, detail="Auction is not in finished state")
+    if auction.winner_id != user_id:
+        raise HTTPException(status_code=403, detail="Only the winner can pay")
+
+    price = auction.current_price
+    winner = db.query(User).filter(User.id == user_id).with_for_update().first()
+    # Bid amount was already deducted when placing the bid, so no additional deduction needed
+    # Just transfer to the seller
+    seller = db.query(User).filter(User.id == auction.owner_id).with_for_update().first()
+    if seller:
+        seller.balance += price
+
+    auction.status = AuctionStatus.PAID
+    db.flush()
+    db.refresh(auction)
+    return auction
 
 
 def update_auction_status(
@@ -231,6 +301,34 @@ def update_auction_status(
     )
 
 
+def _auto_finalize_if_expired(db: Session, auction: Auction):
+    """If deadline passed and auction is still active, pick the winner automatically."""
+    from datetime import datetime
+    if auction.status != AuctionStatus.ACTIVE:
+        return
+    if auction.deadline > datetime.utcnow():
+        return
+
+    # Deadline passed — find highest bid
+    highest_bid = (
+        db.query(Bid)
+        .filter(Bid.auction_id == auction.id)
+        .order_by(Bid.amount.desc())
+        .first()
+    )
+    if highest_bid:
+        auction.status = AuctionStatus.FINISHED
+        auction.winner_id = highest_bid.user_id
+        auction.current_price = highest_bid.amount
+        logger.info("Auto-finalized auction %d, winner user %d", auction.id, highest_bid.user_id)
+    else:
+        # No bids — cancel
+        auction.status = AuctionStatus.CANCELLED
+        logger.info("Auto-cancelled auction %d (no bids, deadline passed)", auction.id)
+
+    db.flush()
+
+
 def get_auction_detail(db: Session, auction_id: int, user_id: int):
     auction = (
         db.query(Auction)
@@ -241,6 +339,8 @@ def get_auction_detail(db: Session, auction_id: int, user_id: int):
 
     if not auction:
         raise HTTPException(status_code=404, detail="Auction not found")
+
+    _auto_finalize_if_expired(db, auction)
 
     return auction
 
