@@ -226,7 +226,7 @@ export default function AuctionDetailPage() {
     }
   }
 
-  const handleStatusUpdate = async () => {
+  const handlePay = async () => {
     setStatusUpdating(true)
     setError("")
     try {
@@ -235,10 +235,53 @@ export default function AuctionDetailPage() {
       setAuction(updated)
     } catch (err: any) {
       const detail = err?.response?.data?.detail
-      setError(detail || (err instanceof Error ? err.message : "Не удалось выполнить операцию"))
+      setError(detail || (err instanceof Error ? err.message : "Не удалось оплатить"))
     } finally {
       setStatusUpdating(false)
     }
+  }
+
+  const handleStatusUpdate = async () => {
+    if (statusUpdating) return
+
+    if (auction.status === AuctionStatus.finished && isWinner) {
+      await handlePay()
+      return
+    }
+
+    if (auction.status === AuctionStatus.paid && isOwner && lotType !== LotType.information) {
+      setStatusUpdating(true)
+      setError("")
+      try {
+        await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/ship`)
+        const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
+        setAuction(updated)
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail
+        setError(detail || (err instanceof Error ? err.message : "Не удалось подтвердить отправку"))
+      } finally {
+        setStatusUpdating(false)
+      }
+      return
+    }
+
+    if (auction.status === AuctionStatus.shipped && isWinner) {
+      setStatusUpdating(true)
+      setError("")
+      try {
+        await AXIOS_INSTANCE.post(`/api/auctions/${auctionId}/complete`)
+        const updated = await api.getAuctionApiAuctionsAuctionIdGet(auctionId)
+        setAuction(updated)
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail
+        setError(detail || (err instanceof Error ? err.message : "Не удалось подтвердить получение"))
+      } finally {
+        setStatusUpdating(false)
+      }
+      return
+    }
+
+    setError("Недопустимый переход статуса")
   }
 
   return (
@@ -452,6 +495,11 @@ export default function AuctionDetailPage() {
                         <WalletIcon className="mr-2 h-4 w-4" />
                         {statusUpdating ? "Оплачиваем..." : `Оплатить ${auction.current_price.toFixed(4)} SOL`}
                       </Button>
+                    )}
+                    {auction.status === AuctionStatus.paid && (
+                      <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-700 font-medium text-center">
+                        Оплата подтверждена
+                      </div>
                     )}
                     {auction.status === AuctionStatus.shipped && (
                       <Button

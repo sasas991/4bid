@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from ..models.models import Auction, AuctionStatus, Bid, FileRecord, User
+from ..models.models import Auction, AuctionStatus, Bid, FileRecord, LotType, User
 from ..schemas import schemas
 from .anchor_client import anchor_chain_client, TREASURY_ADDRESS
 from .auction_chain_service import apply_chain_projection
@@ -283,6 +283,40 @@ def pay_auction(db: Session, auction_id: int, user_id: int):
         seller.balance += price
 
     auction.status = AuctionStatus.PAID
+    db.flush()
+    db.refresh(auction)
+    return auction
+
+
+def ship_auction(db: Session, auction_id: int, user_id: int):
+    """Owner confirms shipment/service delivery after payment."""
+    auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
+    if not auction:
+        raise HTTPException(status_code=404, detail="Auction not found")
+    if auction.owner_id != user_id:
+        raise HTTPException(status_code=403, detail="Only the auction owner can confirm shipment")
+    if auction.status != AuctionStatus.PAID:
+        raise HTTPException(status_code=400, detail="Auction is not in paid state")
+    if auction.lot_type == LotType.INFORMATION:
+        raise HTTPException(status_code=400, detail="Information lots do not support shipment")
+
+    auction.status = AuctionStatus.SHIPPED
+    db.flush()
+    db.refresh(auction)
+    return auction
+
+
+def complete_auction(db: Session, auction_id: int, user_id: int):
+    """Winner confirms receipt/completion and closes the auction lifecycle."""
+    auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
+    if not auction:
+        raise HTTPException(status_code=404, detail="Auction not found")
+    if auction.winner_id != user_id:
+        raise HTTPException(status_code=403, detail="Only the winner can confirm completion")
+    if auction.status != AuctionStatus.SHIPPED:
+        raise HTTPException(status_code=400, detail="Auction is not in shipped state")
+
+    auction.status = AuctionStatus.COMPLETED
     db.flush()
     db.refresh(auction)
     return auction
