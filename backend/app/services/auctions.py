@@ -92,8 +92,7 @@ def place_bid(db: Session, auction_id: int, bid_data: schemas.BidCreate, user: U
         raise HTTPException(status_code=400, detail=f"Bid must be at least {auction.starting_price} SOL")
     if amount <= auction.current_price and auction.current_price > auction.starting_price:
         raise HTTPException(status_code=400, detail=f"Bid must exceed current price of {auction.current_price} SOL")
-    if user.balance < amount:
-        raise HTTPException(status_code=400, detail=f"Insufficient balance. Have {user.balance:.4f} SOL, need {amount:.4f} SOL")
+    # Balance check removed — payment happens only after winning (pay_auction)
 
     amount_lamports = int(math.floor(amount * 1_000_000_000))
 
@@ -134,8 +133,7 @@ def place_bid(db: Session, auction_id: int, bid_data: schemas.BidCreate, user: U
         logger.exception("On-chain commit_bid failed for auction %s", auction_id)
         raise HTTPException(status_code=502, detail=f"On-chain bid failed: {exc}") from exc
 
-    # Deduct from user balance
-    user.balance -= amount
+    # Balance is NOT deducted here — only when the winner confirms payment (pay_auction)
 
     # Update auction current price
     auction.current_price = amount
@@ -274,9 +272,7 @@ def cancel_bid(db: Session, auction_id: int, user_id: int):
             detail="Cannot cancel — someone already placed a higher bid",
         )
 
-    # Refund user's internal balance
-    user = db.query(User).filter(User.id == user_id).with_for_update().first()
-    user.balance += user_bid.amount
+    # No balance refund needed — balance is not deducted at bid time
 
     # If this was the highest bid, reset current_price to starting_price or next highest
     next_highest = (
@@ -305,8 +301,14 @@ def pay_auction(db: Session, auction_id: int, user_id: int):
 
     price = auction.current_price
     winner = db.query(User).filter(User.id == user_id).with_for_update().first()
-    # Bid amount was already deducted when placing the bid, so no additional deduction needed
-    # Just transfer to the seller
+    if winner.balance < price:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient balance. Have {winner.balance:.4f} SOL, need {price:.4f} SOL. Top up your balance first.",
+        )
+
+    # Deduct from winner, credit seller
+    winner.balance -= price
     seller = db.query(User).filter(User.id == auction.owner_id).with_for_update().first()
     if seller:
         seller.balance += price

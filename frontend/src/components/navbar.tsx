@@ -130,18 +130,6 @@ export function Navbar() {
               </>
             ) : (
               <>
-                {DEV_AUTH_BYPASS && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-9 gap-1.5 border-amber-400 text-amber-600 hover:bg-amber-50"
-                    onClick={handleDevLogin}
-                    title="Dev login (DEV_AUTH_BYPASS)"
-                  >
-                    <FlaskConicalIcon className="h-4 w-4" />
-                    <span className="hidden sm:inline">Dev Login</span>
-                  </Button>
-                )}
                 <Button
                   size="sm"
                   className="h-9 gap-1.5 bg-[#3665F3] text-white hover:bg-[#2952d4]"
