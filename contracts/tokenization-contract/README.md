@@ -10,7 +10,7 @@ To run the full app (frontend + backend + db + minio), use root README:
 Quick app start from repo root:
 
 ```bash
-cd ~/programming/grinding_python/4bid
+cd /path/to/4bid
 sudo docker compose up -d --build
 sudo docker compose ps
 ```

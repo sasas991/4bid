@@ -84,7 +84,7 @@ Infra:
 From repo root:
 
 ```bash
-cd ~/programming/grinding_python/4bid
+cd /path/to/4bid
 sudo docker compose up -d --build
 sudo docker compose ps
 ```
@@ -147,7 +147,7 @@ If devnet faucet limits block you, use local validator:
 Terminal 1:
 
 ```bash
-cd ~/programming/grinding_python/4bid
+cd /path/to/4bid
 solana-test-validator --reset
 ```
 
@@ -162,7 +162,7 @@ solana balance
 Deploy program:
 
 ```bash
-cd ~/programming/grinding_python/4bid/contracts/tokenization-contract
+cd /path/to/4bid/contracts/tokenization-contract
 anchor build
 anchor deploy
 ```
@@ -170,7 +170,7 @@ anchor deploy
 Then run app stack:
 
 ```bash
-cd ~/programming/grinding_python/4bid
+cd /path/to/4bid
 sudo docker compose up -d --build
 ```
 
